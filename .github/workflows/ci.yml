@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: lint + test (pure core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      # The pure core (forensic.signals · memory · risk) needs no runtime deps:
+      # tests import from src/ via pytest's pythonpath. Heavy runtime deps
+      # (qwen-agent, httpx, pymongo, mcp) are added here per-task as their
+      # tests land, keeping this check fast and access-independent.
+      # ruff is pinned to the locally-verified version so the lint result is
+      # reproducible — new ruff minors can introduce default rules.
+      - name: Install test tooling
+        run: python -m pip install "pytest>=8" "ruff==0.15.18"
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Test (pytest)
+        run: pytest -q
