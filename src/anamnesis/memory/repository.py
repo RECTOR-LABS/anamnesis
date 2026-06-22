@@ -1,0 +1,45 @@
+"""Storage abstraction for bi-temporal edges.
+
+`Repository` is the interface both the in-memory test fake and the MongoDB/ApsaraDB
+store implement, so the same bi-temporal recall semantics are tested once and
+trusted everywhere.
+"""
+from __future__ import annotations
+
+from typing import Protocol
+
+from .models import Edge
+
+
+class Repository(Protocol):
+    def upsert_edge(self, edge: Edge) -> None: ...
+
+    def find_edges(self, entity_key: str, as_of: str | None = None) -> list[Edge]: ...
+
+
+class InMemoryRepository:
+    """Test fake. `find_edges` mirrors the transaction-time semantics of the
+    MongoDB store: current view hides superseded edges; an `as_of` view returns
+    what was believed at that transaction time."""
+
+    def __init__(self) -> None:
+        self._by_id: dict[str, Edge] = {}
+
+    def upsert_edge(self, edge: Edge) -> None:
+        self._by_id[edge.id] = edge
+
+    def find_edges(self, entity_key: str, as_of: str | None = None) -> list[Edge]:
+        out: list[Edge] = []
+        for e in self._by_id.values():
+            if entity_key not in (e.src, e.dst):
+                continue
+            if as_of is None:
+                if e.superseded_at is not None:
+                    continue
+            else:
+                if e.recorded_at > as_of:
+                    continue
+                if e.superseded_at is not None and e.superseded_at <= as_of:
+                    continue
+            out.append(e)
+        return out
