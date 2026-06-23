@@ -1,4 +1,5 @@
-from anamnesis.memory.models import Edge, Provenance, make_edge_id
+from anamnesis.memory.graph import ForensicMemory
+from anamnesis.memory.models import Edge, Provenance, make_edge, make_edge_id
 
 
 def _edge(**kw) -> Edge:
@@ -72,3 +73,28 @@ def test_as_of_date_excludes_a_fact_superseded_earlier_that_day(repo):
     repo.upsert_edge(_edge(recorded_at="2026-06-01", superseded_at="2026-06-05T08:00:00+00:00"))
     assert repo.find_edges("wallet1", as_of="2026-06-05") == []        # superseded by then
     assert len(repo.find_edges("wallet1", as_of="2026-06-04")) == 1    # still current the day before
+
+
+def test_make_edge_canonicalizes_every_stored_timestamp():
+    # B-5 (write side): make_edge is the canonical write path — it normalizes every stored
+    # temporal field to one fixed-width ISO-8601 UTC instant regardless of the writer's
+    # input granularity, so the as-of compare in find_edges is sound by construction. A
+    # bare date is the START of that day.
+    e = make_edge("RUGGED", "w", "t", valid_from="2026-06-01", recorded_at="2026-06-01",
+                  provenance=Provenance("helius:getAsset", "first_party", 0.95))
+    assert e.recorded_at == "2026-06-01T00:00:00.000000+00:00"
+    assert e.valid_from == "2026-06-01T00:00:00.000000+00:00"
+
+
+def test_make_edge_normalizes_offset_so_as_of_uses_true_instant(repo):
+    # B-5: a recorded_at with a non-UTC offset is canonicalized to UTC on write, so the
+    # as-of compare reflects the TRUE instant, not the wall-clock string. 18:00+07:00 is
+    # 11:00Z — visible at as_of 12:00Z; an un-normalized "18" would sort past "12" and drop
+    # (the leak the code-review caught: stored offsets/`Z` defeat the read-only fix).
+    mem = ForensicMemory(repo)
+    mem.remember([make_edge("RUGGED", "w", "t", valid_from="2026-06-01",
+                            recorded_at="2026-06-01T18:00:00+07:00",
+                            provenance=Provenance("helius:getAsset", "first_party", 0.95))],
+                 now="2026-06-01T18:00:00+07:00")
+    assert len(mem.recall("w", as_of="2026-06-01T12:00:00+00:00")) == 1   # 11:00Z <= 12:00Z
+    assert mem.recall("w", as_of="2026-06-01T10:00:00+00:00") == []        # 11:00Z > 10:00Z

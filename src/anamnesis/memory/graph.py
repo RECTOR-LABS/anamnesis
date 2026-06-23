@@ -17,7 +17,7 @@ association (`SAME_CLUSTER`) is capped at MEDIUM however many links accrue.
 """
 from __future__ import annotations
 
-from .models import Edge
+from .models import Edge, normalize_instant
 from .repository import Repository
 
 # How much each remembered relationship contributes to risk before trust-weighting.
@@ -99,6 +99,7 @@ class ForensicMemory:
     def remember(self, edges: list[Edge], now: str) -> None:
         for edge in edges:  # fail closed before any write — no partial supersession
             _validate_method(edge.provenance.method)
+        now = normalize_instant(now)  # stamp supersession in the canonical instant space
         for edge in edges:
             for prior in self.repo.find_edges(edge.src):
                 if prior.id != edge.id and prior.superseded_at is None \
