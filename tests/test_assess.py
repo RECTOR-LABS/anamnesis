@@ -7,7 +7,7 @@ from anamnesis.memory.repository import InMemoryRepository
 
 def _edge(type_, src, dst, rec, conf=0.95, source="helius:getAsset"):
     return Edge(
-        make_edge_id(type_, src, dst, rec), type_, src, dst,
+        make_edge_id(type_, src, dst, rec, "first_party", source), type_, src, dst,
         rec, None, rec, None, Provenance(source, "first_party", conf),
     )
 

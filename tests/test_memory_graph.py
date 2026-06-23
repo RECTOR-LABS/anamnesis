@@ -7,7 +7,7 @@ from anamnesis.memory.repository import InMemoryRepository
 
 def _edge(type, src, dst, rec, conf=0.95, source="helius:getAsset", method="first_party") -> Edge:
     return Edge(
-        make_edge_id(type, src, dst, rec), type, src, dst,
+        make_edge_id(type, src, dst, rec, method, source), type, src, dst,
         rec, None, rec, None, Provenance(source, method, conf),
     )
 
@@ -257,3 +257,57 @@ def test_corrupt_stored_method_fails_closed_on_supersession():
     mem.repo.upsert_edge(_edge("RUGGED", "w", "t", "2026-01-01", method="bogus"))
     with pytest.raises(ValueError):
         mem.remember([_edge("RUGGED", "w", "t", "2026-02-01")], now="2026-02-01")
+
+
+def test_first_party_cluster_links_alone_cannot_reach_high():
+    # Tuning call (locked): guilt-by-association is capped below HIGH. Even many distinct
+    # first-party SAME_CLUSTER links to known-bad actors corroborate only up to MEDIUM —
+    # only directly-observed RUGS drive HIGH. Without a type ceiling, 4+ links noisy-OR
+    # past 0.6 and reach HIGH on association alone.
+    mem = ForensicMemory(InMemoryRepository())
+    links = [_edge("SAME_CLUSTER", "w", f"bad{i}", "2026-02-01") for i in range(8)]
+    r = mem.trust_weighted_risk(links)
+    assert 0.3 <= r < 0.6  # reaches MEDIUM but is ceiling-capped below HIGH
+
+
+def test_cluster_links_do_not_lift_a_single_rug_to_high():
+    # One observed first-party RUG is MEDIUM; piling on cluster associations (a separate,
+    # MEDIUM-capped tier) cannot push it to HIGH — that still requires a SECOND observed
+    # rug. So cluster evidence corroborates without manufacturing the top verdict.
+    mem = ForensicMemory(InMemoryRepository())
+    edges = (
+        [_edge("RUGGED", "w", "tok", "2026-02-01")]
+        + [_edge("SAME_CLUSTER", "w", f"bad{i}", "2026-02-01") for i in range(8)]
+    )
+    assert 0.3 <= mem.trust_weighted_risk(edges) < 0.6  # MEDIUM, not HIGH
+
+
+def test_same_day_claimed_cannot_clobber_genuine_first_party(repo):
+    # B-6: make_edge_id must encode method+source. Otherwise a planted `claimed` edge
+    # sharing (type, src, dst, recorded_at) with a genuine first-party one gets the SAME
+    # id and silently overwrites it (last-write-wins in upsert_edge), erasing the genuine
+    # belief — a same-day suppression attack. Distinct provenance must get distinct ids.
+    mem = ForensicMemory(repo)
+    mem.remember(
+        [_edge("RUGGED", "w", "t", "2026-02-01", source="helius:getAsset"),
+         _edge("RUGGED", "w", "t", "2026-02-01", conf=1.0,
+               source="claimed:dust", method="claimed")],
+        now="2026-02-01",
+    )
+    live = [e for e in mem.recall("w") if e.superseded_at is None]
+    assert any(e.provenance.method == "first_party" for e in live)  # genuine not clobbered
+
+
+def test_same_day_independent_first_party_sources_coexist(repo):
+    # B-6: two genuine first-party observations of the SAME (type, dst) on the SAME day
+    # from DIFFERENT sources are corroboration, not revision. With method+source in the
+    # id they get distinct ids and both survive; today they collide and one clobbers the
+    # other (the date-granular sibling of the cross-day case already covered above).
+    mem = ForensicMemory(repo)
+    mem.remember(
+        [_edge("RUGGED", "w", "t", "2026-02-01", source="helius:getAsset"),
+         _edge("RUGGED", "w", "t", "2026-02-01", source="rpc:largestAccounts")],
+        now="2026-02-01",
+    )
+    live = [e for e in mem.recall("w") if e.superseded_at is None]
+    assert len(live) == 2

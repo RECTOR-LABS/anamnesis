@@ -261,6 +261,25 @@ def test_resolve_origin_fallback_has_no_created_at():
         assert resolve_origin(client, "mintA") == ("updAuth", None)
 
 
+@respx.mock
+def test_resolve_origin_denylists_launchpad_update_authority():
+    # B-4: when the creation tx is unresolvable, the update-authority fallback must NOT
+    # collapse a launchpad token onto a shared program PDA — that re-introduces the exact
+    # false-clustering the fee-payer design avoids. A denylisted launchpad authority
+    # resolves to None (unknown deployer), not a bogus shared cluster key.
+    from anamnesis.forensic.helius import LAUNCHPAD_AUTHORITIES
+
+    pda = next(iter(LAUNCHPAD_AUTHORITIES))
+    respx.post(HELIUS_URL).mock(
+        side_effect=[
+            _json({"result": []}),
+            _json({"result": {"authorities": [{"address": pda, "scopes": ["full"]}]}}),
+        ]
+    )
+    with _client() as client:
+        assert resolve_origin(client, "mintA") == (None, None)
+
+
 class _FakeClient:
     """Order-independent stand-in for HeliusClient — canned forensic reads."""
 

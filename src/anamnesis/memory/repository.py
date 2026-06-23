@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .models import Edge
+from .models import Edge, normalize_as_of
 
 
 class Repository(Protocol):
@@ -29,6 +29,8 @@ class InMemoryRepository:
         self._by_id[edge.id] = edge
 
     def find_edges(self, entity_key: str, as_of: str | None = None) -> list[Edge]:
+        if as_of is not None:
+            as_of = normalize_as_of(as_of)  # bare date -> end-of-day UTC; sortable compare
         out: list[Edge] = []
         for e in self._by_id.values():
             if entity_key not in (e.src, e.dst):

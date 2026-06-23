@@ -26,6 +26,16 @@ from .signals import TokenProfile
 
 HELIUS_RPC = "https://mainnet.helius-rpc.com/"
 
+# Known launchpad program / shared-authority addresses. Such an address is the update
+# authority for thousands of mints at once, so falling back to it as a "deployer" would
+# collapse every launchpad token onto one PDA — the exact false clustering the fee-payer
+# design avoids on the happy path. A fallback that resolves to one of these is treated as
+# "deployer unknown" instead. Seeded with well-known public program addresses; extended and
+# validated against live Helius data once the API key (access gate #3) lands.
+LAUNCHPAD_AUTHORITIES = frozenset({
+    "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",  # pump.fun program
+})
+
 
 class HeliusError(RuntimeError):
     """A JSON-RPC error payload returned by the Helius endpoint."""
@@ -164,7 +174,10 @@ def resolve_origin(client: HeliusClient, mint: str) -> tuple[str | None, str | N
 
     The deployer is the creation-tx fee payer, falling back to the update authority;
     created_at is that tx's ``blockTime`` (ISO UTC). Either may be ``None``. The creation
-    tx is fetched once so both fields come from a single round trip.
+    tx is fetched once so both fields come from a single round trip. A fallback that lands
+    on a known launchpad shared authority (see ``LAUNCHPAD_AUTHORITIES``) is discarded —
+    collapsing every launchpad mint onto one PDA would manufacture a false deployer
+    cluster, so the deployer is left unknown (``None``) instead.
     """
     signature = client.oldest_signature(mint)
     deployer: str | None = None
@@ -174,7 +187,8 @@ def resolve_origin(client: HeliusClient, mint: str) -> tuple[str | None, str | N
         deployer = fee_payer(tx)
         created_at = creation_time(tx)
     if deployer is None:
-        deployer = update_authority(client.get_asset(mint))
+        candidate = update_authority(client.get_asset(mint))
+        deployer = None if candidate in LAUNCHPAD_AUTHORITIES else candidate
     return deployer, created_at
 
 

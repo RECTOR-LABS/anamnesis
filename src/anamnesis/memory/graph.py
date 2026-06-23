@@ -11,17 +11,24 @@ on its OWN grounded on-chain read — an attacker who poisons memory can forge t
 breadcrumbs, but cannot make a fake rug appear in the agent's own Helius
 observation. So method RANK (not the forgeable source or confidence) drives both
 supersession and scoring: risk comes from distinct FIRST-PARTY rugged tokens, the
-forgeable `source` is never counted, and `claimed`/`derived` evidence can never
-reach HIGH at any volume — even mixed with a genuine first-party rug.
+forgeable `source` is never counted, `claimed`/`derived` evidence can never reach
+HIGH at any volume — even mixed with a genuine first-party rug — and guilt-by-
+association (`SAME_CLUSTER`) is capped at MEDIUM however many links accrue.
 """
 from __future__ import annotations
 
-from .models import Edge
+from .models import Edge, normalize_instant
 from .repository import Repository
 
 # How much each remembered relationship contributes to risk before trust-weighting.
 # RUGGED = direct prior-rug evidence; SAME_CLUSTER = guilt-by-association (discounted).
 RISK_WEIGHTS = {"RUGGED": 1.0, "SAME_CLUSTER": 0.5}
+
+# Band ceiling per relationship TYPE, independent of method. Direct RUGGED evidence may
+# reach HIGH; SAME_CLUSTER (guilt-by-association) is capped at MEDIUM however many distinct
+# first-party links accrue — association corroborates but, alone, never drives the top
+# verdict (only an observed rug does). A fact's effective ceiling is min(method, type).
+TYPE_CEILING = {"RUGGED": 1.0, "SAME_CLUSTER": 0.5}
 
 # How far to trust an edge by HOW it was learned — the poisoning lever. A first-party
 # on-chain observation is fully trusted; a derived inference less so; a `claimed`
@@ -92,6 +99,7 @@ class ForensicMemory:
     def remember(self, edges: list[Edge], now: str) -> None:
         for edge in edges:  # fail closed before any write — no partial supersession
             _validate_method(edge.provenance.method)
+        now = normalize_instant(now)  # stamp supersession in the canonical instant space
         for edge in edges:
             for prior in self.repo.find_edges(edge.src):
                 if prior.id != edge.id and prior.superseded_at is None \
@@ -125,15 +133,20 @@ class ForensicMemory:
                 continue
             k = (e.type, e.dst, METHOD_RANK[e.provenance.method])
             fact_trust[k] = max(fact_trust.get(k, 0.0), _edge_trust(e))
-        # Noisy-OR over distinct facts WITHIN each method tier (sorted keys → bit-stable
-        # float order), capped at that tier's ceiling; the verdict is the strongest tier.
-        # The derived tier caps at MEDIUM, so claimed/derived can never reach HIGH at any
-        # scale — even mixed, per token, with a genuine first-party rug.
-        tier_product: dict[int, float] = {}
+        # Noisy-OR over distinct facts WITHIN each (method-rank, type) tier (sorted keys →
+        # bit-stable float order), capped at that tier's EFFECTIVE ceiling — the lesser of
+        # the method ceiling (derived caps at MEDIUM) and the type ceiling (SAME_CLUSTER
+        # caps at MEDIUM). The verdict is the strongest tier, so HIGH is reachable only via
+        # directly-observed first-party RUGS; derived inference and cluster association each
+        # corroborate up to MEDIUM but can never, at any scale, drive the top verdict.
+        tier_product: dict[tuple[int, str], float] = {}
         for (etype, _dst, rank) in sorted(fact_trust):
             p = min(RISK_WEIGHTS[etype] * fact_trust[(etype, _dst, rank)] * PER_FACT_SCALE, 1.0)
-            tier_product[rank] = tier_product.get(rank, 1.0) * (1.0 - p)
+            tier_product[(rank, etype)] = tier_product.get((rank, etype), 1.0) * (1.0 - p)
         return max(
-            (min(1.0 - prod, RANK_CEILING[rank]) for rank, prod in tier_product.items()),
+            (
+                min(1.0 - prod, RANK_CEILING[rank], TYPE_CEILING[etype])
+                for (rank, etype), prod in tier_product.items()
+            ),
             default=0.0,
         )
