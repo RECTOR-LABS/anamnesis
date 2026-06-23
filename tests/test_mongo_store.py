@@ -4,11 +4,14 @@ assert: full document fidelity, upsert idempotency, and index creation. These ru
 on every `pytest` invocation against mongomock, so the Mongo translation is covered
 even without a live server.
 """
-import mongomock
 import pytest
 
 from anamnesis.memory.models import Edge, Provenance, make_edge_id
 from anamnesis.memory.mongo_store import MongoRepository
+
+# mongomock stands in for a server; skip (don't error) the whole module if a minimal
+# environment hasn't installed it, so a plain `pytest` without it degrades gracefully.
+mongomock = pytest.importorskip("mongomock")
 
 DB = "anamnesis_test"
 

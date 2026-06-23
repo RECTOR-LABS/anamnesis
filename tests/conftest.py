@@ -14,6 +14,7 @@ import os
 
 import pytest
 
+from anamnesis import config
 from anamnesis.memory.repository import InMemoryRepository
 
 # A dedicated, disposable database for the contract tests — deliberately NOT the
@@ -42,6 +43,14 @@ def repo(request: pytest.FixtureRequest):
     # Mongo backend: real ApsaraDB when MONGODB_URI is set, else mongomock so the
     # contract still runs (and verifies the query translation) without a server.
     from anamnesis.memory.mongo_store import MongoRepository
+
+    # Enforce the disposable-DB invariant instead of trusting the literals differ: a
+    # rename or an ANAMNESIS_DB override that collides here would drop production memory.
+    if CONTRACT_DB == config.ANAMNESIS_DB:
+        raise RuntimeError(
+            f"contract DB {CONTRACT_DB!r} must differ from the production db "
+            "(config.ANAMNESIS_DB); refusing to run to avoid dropping real memory"
+        )
 
     if uri := os.environ.get("MONGODB_URI"):
         from pymongo import MongoClient
