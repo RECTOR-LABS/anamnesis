@@ -10,8 +10,8 @@ def _edge(type, src, dst, rec, conf=0.95, source="helius:getAsset") -> Edge:
     )
 
 
-def test_repeat_deployer_history_is_recalled():
-    mem = ForensicMemory(InMemoryRepository())
+def test_repeat_deployer_history_is_recalled(repo):
+    mem = ForensicMemory(repo)
     mem.remember(
         [_edge("DEPLOYED", "ruggER", "tok1", "2026-02-01"),
          _edge("RUGGED", "ruggER", "tok1", "2026-02-09")],
