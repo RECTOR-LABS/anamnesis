@@ -43,9 +43,9 @@ def _from_doc(doc: dict[str, Any]) -> Edge:
         src=doc["src"],
         dst=doc["dst"],
         valid_from=doc["valid_from"],
-        valid_to=doc["valid_to"],
+        valid_to=doc.get("valid_to"),
         recorded_at=doc["recorded_at"],
-        superseded_at=doc["superseded_at"],
+        superseded_at=doc.get("superseded_at"),
         provenance=Provenance(p["source"], p["method"], p["confidence"]),
     )
 

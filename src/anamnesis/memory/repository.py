@@ -42,4 +42,6 @@ class InMemoryRepository:
                 if e.superseded_at is not None and e.superseded_at <= as_of:
                     continue
             out.append(e)
-        return out
+        # Stable (recorded_at, id) order so the fake mirrors the Mongo store's
+        # sort exactly — both backends agree on sequence, not just membership.
+        return sorted(out, key=lambda e: (e.recorded_at, e.id))

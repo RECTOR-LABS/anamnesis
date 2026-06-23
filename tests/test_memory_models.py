@@ -37,3 +37,14 @@ def test_as_of_time_travel_returns_belief_at_that_time(repo):
     assert len(repo.find_edges("wallet1", as_of="2026-06-01")) == 1  # recorded that day
     assert len(repo.find_edges("wallet1", as_of="2026-06-04")) == 1  # still believed
     assert repo.find_edges("wallet1", as_of="2026-06-05") == []      # superseded that day
+
+
+def test_find_edges_returns_deterministic_recorded_at_order(repo):
+    # Both backends must agree on sequence, not just membership: results come back
+    # in a stable (recorded_at, id) order regardless of insertion order.
+    repo.upsert_edge(_edge(type="DEPLOYED", recorded_at="2026-03-01"))
+    repo.upsert_edge(_edge(type="RUGGED", recorded_at="2026-01-15"))
+    repo.upsert_edge(_edge(type="FUNDED_BY", recorded_at="2026-02-01"))
+    assert [e.recorded_at for e in repo.find_edges("wallet1")] == [
+        "2026-01-15", "2026-02-01", "2026-03-01",
+    ]
