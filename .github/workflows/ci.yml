@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: lint + test (pure core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      # Test tooling + the runtime deps the current tests exercise. The forensic
+      # tests use httpx (with respx to mock it); heavier deps (qwen-agent,
+      # pymongo, mcp) are still added per-task as their tests land, keeping this
+      # check fast and access-independent. ruff is pinned to the locally-verified
+      # version so the lint result is reproducible (new ruff minors add rules).
+      - name: Install test tooling
+        run: python -m pip install "pytest>=8" "ruff==0.15.18" "httpx>=0.27" "respx>=0.21"
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Test (pytest)
+        run: pytest -q

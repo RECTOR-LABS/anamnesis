@@ -1,0 +1,30 @@
+[project]
+name = "anamnesis"
+version = "0.1.0"
+description = "Solana pre-trade forensic agent with compounding bi-temporal memory"
+requires-python = ">=3.12"
+dependencies = [
+  "qwen-agent[gui,mcp]>=0.0.30",
+  "openai>=1.40",
+  "httpx>=0.27",
+  "pymongo>=4.6,<5",
+  "mcp>=1.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "respx>=0.21"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
