@@ -77,6 +77,8 @@ def _supersedes(new: Edge, prior: Edge) -> bool:
     is strictly better-supported, or is the SAME source revising itself at equal
     trust; independent sources at equal trust coexist as corroboration.
     """
+    _validate_method(new.provenance.method)
+    _validate_method(prior.provenance.method)  # `prior` came from the store — fail closed
     if METHOD_RANK[new.provenance.method] < METHOD_RANK[prior.provenance.method]:
         return False
     nt, pt = _edge_trust(new), _edge_trust(prior)
@@ -111,28 +113,30 @@ class ForensicMemory:
     def trust_weighted_risk(self, edges: list[Edge]) -> float:
         for e in edges:  # fail closed on any malformed edge before scoring
             _validate_method(e.provenance.method)
-        # One fact per (type, dst). A fact's TIER is the strongest method observed for
-        # it (rank), its magnitude-trust is its strongest scoring evidence, its weight
-        # is RISK_WEIGHTS[type]. Forgeable `source` is never counted, so sybil sources
-        # and same-fact spam cannot inflate; `claimed` is context-only (skipped here).
+        # One fact per (type, dst). A fact's TIER is the strongest method observed for it
+        # (rank); its magnitude-trust is the best evidence OF THAT TIER's method — bound
+        # to the winning rank so a lower-method (e.g. planted `derived`) edge can never
+        # lend its magnitude to the first-party ceiling. Weight is RISK_WEIGHTS[type].
+        # Forgeable `source` is never counted; `claimed` is context-only (skipped here).
         facts: dict[tuple[str, str], tuple[int, float, float]] = {}
         for e in edges:
             if e.type not in RISK_WEIGHTS or e.provenance.method not in SCORING_METHODS:
                 continue
             rank, trust = METHOD_RANK[e.provenance.method], _edge_trust(e)
             k = (e.type, e.dst)
-            if k in facts:
-                prank, ptrust, weight = facts[k]
-                facts[k] = (max(rank, prank), max(trust, ptrust), weight)
-            else:
-                facts[k] = (rank, trust, RISK_WEIGHTS[e.type])
+            if k not in facts or rank > facts[k][0]:
+                facts[k] = (rank, trust, RISK_WEIGHTS[e.type])  # stronger method: take ITS trust
+            elif rank == facts[k][0]:
+                facts[k] = (rank, max(trust, facts[k][1]), facts[k][2])  # same method: best conf
+            # rank below the incumbent: a weaker method does not feed a stronger fact.
         # Noisy-OR over distinct facts WITHIN each method tier, capped at that tier's
         # ceiling; the verdict is the strongest tier. A tier cannot borrow a higher
         # tier's ceiling, so `derived` can never reach HIGH at any scale — even mixed
-        # with a genuine first-party rug. Taking the max over facts per key makes the
-        # result independent of input/backend ordering.
+        # with a genuine first-party rug. Iterating sorted keys makes the float product
+        # bit-for-bit independent of input/backend ordering.
         tier_product: dict[int, float] = {}
-        for (etype, _dst), (rank, trust, weight) in facts.items():
+        for k in sorted(facts):
+            rank, trust, weight = facts[k]
             p = min(weight * trust * PER_FACT_SCALE, 1.0)
             tier_product[rank] = tier_product.get(rank, 1.0) * (1.0 - p)
         return max(

@@ -187,9 +187,12 @@ def test_negative_confidence_cannot_lower_risk():
     mem = ForensicMemory(InMemoryRepository())
     genuine = [_edge("RUGGED", "w", "tA", "2026-02-01"),
                _edge("RUGGED", "w", "tB", "2026-02-02")]  # two first-party rugs -> HIGH
-    poisoned = genuine + [_edge("RUGGED", "w", "tC", "2026-02-03", conf=-1.0)]
+    poisoned = genuine + [
+        _edge("RUGGED", "w", "tC", "2026-02-03", conf=-1.0),          # distinct-token inversion
+        _edge("RUGGED", "w", "tA", "2026-02-01", conf=-5.0, source="x"),  # same-token neutralize
+    ]
     assert mem.trust_weighted_risk(genuine) >= 0.6
-    assert mem.trust_weighted_risk(poisoned) >= mem.trust_weighted_risk(genuine)
+    assert mem.trust_weighted_risk(poisoned) >= 0.6  # clamp neutralizes both attacks
 
 
 def test_higher_confidence_claim_cannot_supersede_first_party():
@@ -205,10 +208,10 @@ def test_higher_confidence_claim_cannot_supersede_first_party():
     assert len(genuine) == 1 and genuine[0].superseded_at is None  # first-party survives
 
 
-def test_first_party_plus_derived_flood_cannot_reach_high():
+def test_first_party_plus_derived_flood_on_distinct_tokens_cannot_reach_high():
     # A single genuine first-party rug plus a flood of planted `derived` edges on
-    # distinct tokens must NOT reach HIGH — `derived` cannot borrow the first-party
-    # ceiling to manufacture a HIGH verdict off one real finding.
+    # DISTINCT tokens must NOT reach HIGH — the derived tier caps at MEDIUM and cannot
+    # be combined across the HIGH line with the lone first-party rug.
     mem = ForensicMemory(InMemoryRepository())
     edges = [_edge("RUGGED", "w", "real", "2026-02-01")]  # one genuine first-party rug
     edges += [
@@ -219,15 +222,44 @@ def test_first_party_plus_derived_flood_cannot_reach_high():
     assert mem.trust_weighted_risk(edges) < 0.6  # stays below HIGH despite the flood
 
 
-def test_method_tie_scoring_is_order_independent():
-    # A fact carrying both a first-party and an equal-trust `derived` edge must score
-    # identically regardless of edge order (no ceiling flip from backend iteration
-    # order): the fact is first-party-tier because a first-party observation exists.
+def test_planted_derived_cannot_ride_first_party_ceiling_on_same_token():
+    # The cross-tier magnitude leak: a token's first-party tier must be scored by its
+    # FIRST-PARTY evidence only. A dust first-party rug co-observed with a planted
+    # high-confidence `derived` edge on the SAME token must not let the derived
+    # magnitude ride the first-party ceiling — it contributes nothing.
     mem = ForensicMemory(InMemoryRepository())
-    edges = []
-    for tok in ("tA", "tB", "tC"):
-        edges.append(_edge("RUGGED", "w", tok, "2026-02-01", conf=0.6))  # first_party trust 0.6
+    edges, fp_only = [], []
+    for tok in ("tA", "tB", "tC", "tD", "tE"):
+        fp = _edge("RUGGED", "w", tok, "2026-02-01", conf=0.001)  # dust first_party
+        edges.append(fp)
+        fp_only.append(fp)
         edges.append(_edge("RUGGED", "w", tok, "2026-02-01", conf=1.0,
-                           source="x", method="derived"))  # derived trust 0.6
+                           source="x", method="derived"))  # planted strong derived
+    assert mem.trust_weighted_risk(edges) < 0.6  # cannot reach HIGH off forged magnitude
+    # the planted derived edges add nothing: score equals the dust-first-party-only score
+    assert mem.trust_weighted_risk(edges) == mem.trust_weighted_risk(fp_only)
+
+
+def test_method_tie_scoring_is_order_independent():
+    # A fact carrying both a first-party and a HIGHER-trust `derived` edge must (a) score
+    # identically regardless of edge order and (b) be scored on its first-party evidence
+    # only — the derived edge's larger magnitude must not leak into the first-party tier.
+    mem = ForensicMemory(InMemoryRepository())
+    edges, fp_only = [], []
+    for tok in ("tA", "tB", "tC"):
+        fp = _edge("RUGGED", "w", tok, "2026-02-01", conf=0.2)  # first_party, trust 0.2
+        edges.append(fp)
+        fp_only.append(fp)
+        edges.append(_edge("RUGGED", "w", tok, "2026-02-01", conf=1.0,
+                           source="x", method="derived"))  # derived, HIGHER trust 0.6
     assert mem.trust_weighted_risk(edges) == mem.trust_weighted_risk(list(reversed(edges)))
-    assert mem.trust_weighted_risk(edges) >= 0.6  # three first-party-tier rugs -> HIGH
+    assert mem.trust_weighted_risk(edges) == mem.trust_weighted_risk(fp_only)
+
+
+def test_corrupt_stored_method_fails_closed_on_supersession():
+    # A stored edge with an invalid method (schema drift / direct tampering) must fail
+    # closed with an actionable ValueError during a later remember(), not a raw KeyError.
+    mem = ForensicMemory(InMemoryRepository())
+    mem.repo.upsert_edge(_edge("RUGGED", "w", "t", "2026-01-01", method="bogus"))
+    with pytest.raises(ValueError):
+        mem.remember([_edge("RUGGED", "w", "t", "2026-02-01")], now="2026-02-01")
