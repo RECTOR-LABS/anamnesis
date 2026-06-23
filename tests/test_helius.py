@@ -68,6 +68,24 @@ def test_rpc_error_raises_heliuserror():
         client.get_asset("mintA")
 
 
+@respx.mock
+def test_rpc_missing_result_raises_heliuserror():
+    # A well-formed envelope carrying neither result nor error is a protocol
+    # violation — surface it as HeliusError, not a bare KeyError.
+    respx.post(HELIUS_URL).mock(return_value=_json({"jsonrpc": "2.0", "id": "anamnesis"}))
+    with _client() as client, pytest.raises(HeliusError, match="getAsset"):
+        client.get_asset("mintA")
+
+
+@respx.mock
+def test_get_token_largest_accounts_tolerates_null_result():
+    # ``result: null`` (e.g. nothing indexed yet) must degrade to "no holders",
+    # not crash on ``None.get``.
+    respx.post(HELIUS_URL).mock(return_value=_json({"result": None}))
+    with _client() as client:
+        assert client.get_token_largest_accounts("mintA") == []
+
+
 def test_parse_authorities_absent_means_renounced():
     asset = {"token_info": {"supply": 100, "decimals": 6}}
     assert parse_authorities(asset) == (None, None)
@@ -86,6 +104,13 @@ def test_top_holder_pct_computes_largest_over_supply():
 def test_top_holder_pct_zero_supply_or_no_accounts_is_safe():
     assert top_holder_pct([{"address": "a", "amount": "250"}], supply=0) == 0.0
     assert top_holder_pct([], supply=1000) == 0.0
+
+
+def test_top_holder_pct_malformed_amount_is_safe():
+    # A missing or non-numeric ``amount`` on the top account must not abort the
+    # whole profile build — treat unknown concentration as 0.0 (safe).
+    assert top_holder_pct([{"address": "a"}], supply=1000) == 0.0
+    assert top_holder_pct([{"address": "a", "amount": "n/a"}], supply=1000) == 0.0
 
 
 @respx.mock
@@ -120,6 +145,17 @@ def test_oldest_signature_paginates_to_oldest():
 
 
 @respx.mock
+def test_oldest_signature_tolerates_entry_without_signature():
+    # A malformed oldest entry (no "signature") must stop pagination cleanly
+    # rather than raise KeyError.
+    respx.post(HELIUS_URL).mock(
+        return_value=_json({"result": [{"signature": "s2"}, {"err": "no-sig"}]})
+    )
+    with _client() as client:
+        assert client.oldest_signature("addr", page_limit=2) is None
+
+
+@respx.mock
 def test_get_token_accounts_returns_total():
     respx.post(HELIUS_URL).mock(
         return_value=_json({"result": {"total": 1234, "token_accounts": []}})
@@ -134,6 +170,14 @@ def test_holder_count_reads_total():
     respx.post(HELIUS_URL).mock(return_value=_json({"result": {"total": 1234}}))
     with _client() as client:
         assert holder_count(client, "mintA") == 1234
+
+
+@respx.mock
+def test_holder_count_tolerates_null_result():
+    # ``result: null`` must read as zero holders, not crash on ``None.get``.
+    respx.post(HELIUS_URL).mock(return_value=_json({"result": None}))
+    with _client() as client:
+        assert holder_count(client, "mintA") == 0
 
 
 def test_fee_payer_extracts_first_account_jsonparsed():

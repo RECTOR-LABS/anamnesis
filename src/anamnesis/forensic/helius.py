@@ -56,6 +56,8 @@ class HeliusClient:
         data = resp.json()
         if data.get("error"):
             raise HeliusError(f"{method} failed: {data['error']}")
+        if "result" not in data:
+            raise HeliusError(f"{method} returned no result: {data!r}")
         return data["result"]
 
     def get_asset(self, mint: str) -> dict:
@@ -65,7 +67,7 @@ class HeliusClient:
     def get_token_largest_accounts(self, mint: str) -> list[dict]:
         """Top (up to 20) token accounts by balance — for holder concentration."""
         result = self._rpc("getTokenLargestAccounts", [mint])
-        return result.get("value", [])
+        return (result or {}).get("value", [])
 
     def get_token_accounts(self, mint: str, *, page: int = 1, limit: int = 1000) -> dict:
         """getTokenAccounts for a mint — holders, paginated; the result carries ``total``."""
@@ -95,7 +97,10 @@ class HeliusClient:
             page = self.get_signatures_for_address(address, before=before, limit=page_limit)
             if not page:
                 break
-            oldest = page[-1]["signature"]
+            sig = page[-1].get("signature")
+            if sig is None:  # malformed oldest entry — stop rather than KeyError
+                break
+            oldest = sig
             if len(page) < page_limit:
                 break
             before = oldest
@@ -115,14 +120,17 @@ def top_holder_pct(largest_accounts: list[dict], supply: int) -> float:
     """Largest single holder as a percentage of total supply (``0.0`` if unknown)."""
     if not largest_accounts or not supply:
         return 0.0
-    top = int(largest_accounts[0]["amount"])
+    try:
+        top = int(largest_accounts[0].get("amount"))
+    except (TypeError, ValueError):  # missing/non-numeric amount — unknown, treat as safe
+        return 0.0
     return top / supply * 100.0
 
 
 def holder_count(client: HeliusClient, mint: str) -> int:
     """Total holders of a mint (token-account count) from getTokenAccounts ``total``."""
     result = client.get_token_accounts(mint, limit=1)
-    return int(result.get("total", 0))
+    return int((result or {}).get("total", 0))
 
 
 def fee_payer(tx: dict) -> str | None:
