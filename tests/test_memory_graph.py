@@ -10,8 +10,8 @@ def _edge(type, src, dst, rec, conf=0.95, source="helius:getAsset") -> Edge:
     )
 
 
-def test_repeat_deployer_history_is_recalled():
-    mem = ForensicMemory(InMemoryRepository())
+def test_repeat_deployer_history_is_recalled(repo):
+    mem = ForensicMemory(repo)
     mem.remember(
         [_edge("DEPLOYED", "ruggER", "tok1", "2026-02-01"),
          _edge("RUGGED", "ruggER", "tok1", "2026-02-09")],
@@ -19,6 +19,18 @@ def test_repeat_deployer_history_is_recalled():
     )
     hist = mem.recall_deployer_history("ruggER")
     assert {e.type for e in hist} == {"DEPLOYED", "RUGGED"}
+
+
+def test_supersession_hides_prior_belief_on_recall(repo):
+    # remember() supersedes a prior (type, dst) belief; the superseded edge drops
+    # out of the current view. Runs on whichever backend --store selects, so the
+    # find -> mutate prior -> re-upsert path is proven on the Mongo store too.
+    mem = ForensicMemory(repo)
+    mem.remember([_edge("RUGGED", "wallet1", "tok1", "2026-02-01")], now="2026-02-01")
+    mem.remember([_edge("RUGGED", "wallet1", "tok1", "2026-02-10")], now="2026-02-10")
+    current = mem.recall("wallet1")
+    assert len(current) == 1
+    assert current[0].recorded_at == "2026-02-10"
 
 
 def test_trust_weighted_risk_rewards_corroboration():

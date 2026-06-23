@@ -1,5 +1,4 @@
 from anamnesis.memory.models import Edge, Provenance, make_edge_id
-from anamnesis.memory.repository import InMemoryRepository
 
 
 def _edge(**kw) -> Edge:
@@ -13,18 +12,39 @@ def _edge(**kw) -> Edge:
     return Edge(**base)
 
 
-def test_find_by_either_endpoint():
-    repo = InMemoryRepository()
+def test_find_by_either_endpoint(repo):
     repo.upsert_edge(_edge())
     assert len(repo.find_edges("wallet1")) == 1
     assert len(repo.find_edges("mintA")) == 1
     assert repo.find_edges("nobody") == []
 
 
-def test_current_view_excludes_superseded():
-    repo = InMemoryRepository()
+def test_current_view_excludes_superseded(repo):
     e = _edge()
     e.superseded_at = "2026-06-05"
     repo.upsert_edge(e)
     assert repo.find_edges("wallet1") == []  # superseded -> hidden in current view
     assert len(repo.find_edges("wallet1", as_of="2026-06-03")) == 1  # but known as of then
+
+
+def test_as_of_time_travel_returns_belief_at_that_time(repo):
+    # Recorded 06-01, superseded 06-05: invisible before it was recorded and once
+    # superseded; visible only across the window it was the current belief.
+    e = _edge(recorded_at="2026-06-01")
+    e.superseded_at = "2026-06-05"
+    repo.upsert_edge(e)
+    assert repo.find_edges("wallet1", as_of="2026-05-31") == []      # not yet recorded
+    assert len(repo.find_edges("wallet1", as_of="2026-06-01")) == 1  # recorded that day
+    assert len(repo.find_edges("wallet1", as_of="2026-06-04")) == 1  # still believed
+    assert repo.find_edges("wallet1", as_of="2026-06-05") == []      # superseded that day
+
+
+def test_find_edges_returns_deterministic_recorded_at_order(repo):
+    # Both backends must agree on sequence, not just membership: results come back
+    # in a stable (recorded_at, id) order regardless of insertion order.
+    repo.upsert_edge(_edge(type="DEPLOYED", recorded_at="2026-03-01"))
+    repo.upsert_edge(_edge(type="RUGGED", recorded_at="2026-01-15"))
+    repo.upsert_edge(_edge(type="FUNDED_BY", recorded_at="2026-02-01"))
+    assert [e.recorded_at for e in repo.find_edges("wallet1")] == [
+        "2026-01-15", "2026-02-01", "2026-03-01",
+    ]
