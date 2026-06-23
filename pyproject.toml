@@ -5,6 +5,10 @@ description = "Solana pre-trade forensic agent with compounding bi-temporal memo
 requires-python = ">=3.12"
 dependencies = [
   "qwen-agent[gui,mcp]>=0.0.30",
+  # qwen_agent.utils imports soundfile unconditionally, but the [gui,mcp] extra does not
+  # pull it — so `import qwen_agent` (any submodule) fails without this. Declare it so a
+  # plain `pip install -e .` yields a working agent/MCP/WebUI runtime (A.8/A.9/deploy).
+  "soundfile>=0.12",
   "openai>=1.40",
   "httpx>=0.27",
   "pymongo>=4.6,<5",
