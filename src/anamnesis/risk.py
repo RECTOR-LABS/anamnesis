@@ -35,8 +35,12 @@ def compose_verdict(signals: list[Signal], memory_edges: list, memory_risk: floa
     why: list[str] = []
     if memory_risk >= HIGH_THRESHOLD:
         why.append("deployer has remembered prior rug history")
+    elif memory_risk >= MEDIUM_THRESHOLD:
+        why.append("deployer has remembered partial rug history")
     if any(s.severity == "high" for s in signals):
         why.append("live high-severity on-chain signals present")
+    elif any(s.severity == "medium" for s in signals):
+        why.append("live medium-severity on-chain signals present")
     rationale = "; ".join(why) or "no significant risk signals or memory"
 
     return Verdict(level, score, rationale, cited_signals=signals, remembered=list(memory_edges))

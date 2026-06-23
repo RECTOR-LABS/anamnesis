@@ -14,6 +14,7 @@ import os
 
 import pytest
 
+from anamnesis import config
 from anamnesis.memory.repository import InMemoryRepository
 
 # A dedicated, disposable database for the contract tests — deliberately NOT the
@@ -43,13 +44,20 @@ def repo(request: pytest.FixtureRequest):
     # contract still runs (and verifies the query translation) without a server.
     from anamnesis.memory.mongo_store import MongoRepository
 
+    # Enforce the disposable-DB invariant instead of trusting the literals differ: a
+    # rename or an ANAMNESIS_DB override that collides here would drop production memory.
+    if CONTRACT_DB == config.ANAMNESIS_DB:
+        raise RuntimeError(
+            f"contract DB {CONTRACT_DB!r} must differ from the production db "
+            "(config.ANAMNESIS_DB); refusing to run to avoid dropping real memory"
+        )
+
     if uri := os.environ.get("MONGODB_URI"):
         from pymongo import MongoClient
 
         client = MongoClient(uri, serverSelectionTimeoutMS=10000)
     else:
-        import mongomock
-
+        mongomock = pytest.importorskip("mongomock")  # skip (don't error) if absent
         client = mongomock.MongoClient()
     try:
         client.drop_database(CONTRACT_DB)  # isolate this test from any prior run

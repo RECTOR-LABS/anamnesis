@@ -43,9 +43,12 @@ jobs:
       - name: Test (pytest)
         run: pytest -q
 
-      # Re-run the repository + memory contract against the Mongo store. With no
-      # MONGODB_URI in CI the `repo` fixture uses mongomock, so the Edge<->doc
-      # serialization and bi-temporal query translation are exercised every PR;
-      # the same command with MONGODB_URI set runs it against live ApsaraDB.
+      # Re-run the full suite against the Mongo store. Only the `repo`-fixture tests vary
+      # by backend (the rest harmlessly re-run on the in-memory fake); running everything
+      # rather than a hand-maintained file list guarantees any FUTURE contract test is
+      # covered on Mongo automatically, and the suite is sub-second so the cost is nil.
+      # With no MONGODB_URI the fixture uses mongomock, exercising the Edge<->doc
+      # serialization and bi-temporal query translation every PR; with MONGODB_URI set the
+      # same command hits live ApsaraDB.
       - name: Test — Mongo store contract (mongomock)
         run: pytest -q --store=mongo
