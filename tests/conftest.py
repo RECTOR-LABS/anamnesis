@@ -57,8 +57,7 @@ def repo(request: pytest.FixtureRequest):
 
         client = MongoClient(uri, serverSelectionTimeoutMS=10000)
     else:
-        import mongomock
-
+        mongomock = pytest.importorskip("mongomock")  # skip (don't error) if absent
         client = mongomock.MongoClient()
     try:
         client.drop_database(CONTRACT_DB)  # isolate this test from any prior run
