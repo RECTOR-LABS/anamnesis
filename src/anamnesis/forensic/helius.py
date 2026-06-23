@@ -1,20 +1,23 @@
 """Helius forensic reads — a thin JSON-RPC client over the DAS + token RPC, plus
 pure extractors that turn raw responses into risk-relevant fields.
 
-Schema verified against the Helius DAS getAsset docs: ``result.token_info`` carries
+Schema verified against the Helius DAS docs: getAsset ``result.token_info`` carries
 ``mint_authority``/``freeze_authority`` (absent == renounced == safe) and ``supply``;
-``getTokenLargestAccounts`` returns ``result.value`` with raw string ``amount``s.
+``getTokenLargestAccounts`` returns ``result.value`` with raw string ``amount``s;
+``getTokenAccounts`` returns a ``total`` holder count by default.
 
 Deployer resolution (the memory key) deliberately does NOT use ``result.creators``:
 the Helius docs note DAS "creators" is Metaplex metadata — not the deployer wallet —
-and it is empty for pump.fun mints. Instead ``resolve_deployer`` takes the fee-payer
-of the mint's creation (oldest) transaction — the wallet that paid to deploy, which
-holds even when the rugger renounces every authority — and falls back to the update
-authority when the creation tx is unresolvable. The fee-payer extraction is validated
-against a real deploy transaction once a Helius key is available (the live tracer).
+and it is empty for pump.fun mints. ``resolve_origin`` instead takes the fee-payer of
+the mint's creation (oldest) transaction — the wallet that paid to deploy, which holds
+even when the rugger renounces every authority — and falls back to the update authority
+when that tx is unresolvable. It returns the creation timestamp from the same tx. The
+fee-payer extraction is validated against a real deploy tx once a Helius key is available.
 """
 
 from __future__ import annotations
+
+from datetime import datetime, timezone
 
 import httpx
 
@@ -60,6 +63,10 @@ class HeliusClient:
         """Top (up to 20) token accounts by balance — for holder concentration."""
         result = self._rpc("getTokenLargestAccounts", [mint])
         return result.get("value", [])
+
+    def get_token_accounts(self, mint: str, *, page: int = 1, limit: int = 1000) -> dict:
+        """getTokenAccounts for a mint — holders, paginated; the result carries ``total``."""
+        return self._rpc("getTokenAccounts", {"mint": mint, "page": page, "limit": limit})
 
     def get_signatures_for_address(
         self, address: str, *, before: str | None = None, limit: int = 1000
@@ -109,6 +116,12 @@ def top_holder_pct(largest_accounts: list[dict], supply: int) -> float:
     return top / supply * 100.0
 
 
+def holder_count(client: HeliusClient, mint: str) -> int:
+    """Total holders of a mint (token-account count) from getTokenAccounts ``total``."""
+    result = client.get_token_accounts(mint, limit=1)
+    return int(result.get("total", 0))
+
+
 def fee_payer(tx: dict) -> str | None:
     """The fee payer of a transaction — accountKeys[0] (jsonParsed obj or raw string)."""
     keys = (((tx or {}).get("transaction") or {}).get("message") or {}).get("accountKeys") or []
@@ -116,6 +129,14 @@ def fee_payer(tx: dict) -> str | None:
         return None
     first = keys[0]
     return first["pubkey"] if isinstance(first, dict) else first
+
+
+def creation_time(tx: dict) -> str | None:
+    """ISO-8601 UTC timestamp from a transaction's ``blockTime`` (None if absent)."""
+    block_time = (tx or {}).get("blockTime")
+    if not block_time:
+        return None
+    return datetime.fromtimestamp(block_time, tz=timezone.utc).isoformat()
 
 
 def update_authority(asset: dict) -> str | None:
@@ -127,15 +148,25 @@ def update_authority(asset: dict) -> str | None:
     return authorities[0].get("address") if authorities else None
 
 
-def resolve_deployer(client: HeliusClient, mint: str) -> str | None:
-    """Resolve a mint's deployer wallet (its memory key).
+def resolve_origin(client: HeliusClient, mint: str) -> tuple[str | None, str | None]:
+    """Return ``(deployer, created_at)`` from the mint's creation (oldest) tx.
 
-    Primary: the fee payer of the mint's creation (oldest) transaction — robust even
-    when every authority is renounced. Fallback: the update authority from getAsset.
+    The deployer is the creation-tx fee payer, falling back to the update authority;
+    created_at is that tx's ``blockTime`` (ISO UTC). Either may be ``None``. The creation
+    tx is fetched once so both fields come from a single round trip.
     """
     signature = client.oldest_signature(mint)
+    deployer: str | None = None
+    created_at: str | None = None
     if signature:
-        payer = fee_payer(client.get_transaction(signature))
-        if payer:
-            return payer
-    return update_authority(client.get_asset(mint))
+        tx = client.get_transaction(signature)
+        deployer = fee_payer(tx)
+        created_at = creation_time(tx)
+    if deployer is None:
+        deployer = update_authority(client.get_asset(mint))
+    return deployer, created_at
+
+
+def resolve_deployer(client: HeliusClient, mint: str) -> str | None:
+    """The mint's deployer wallet (its memory key) — see :func:`resolve_origin`."""
+    return resolve_origin(client, mint)[0]

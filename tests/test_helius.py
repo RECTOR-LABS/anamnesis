@@ -5,9 +5,12 @@ import respx
 from anamnesis.forensic.helius import (
     HeliusClient,
     HeliusError,
+    creation_time,
     fee_payer,
+    holder_count,
     parse_authorities,
     resolve_deployer,
+    resolve_origin,
     top_holder_pct,
     update_authority,
 )
@@ -115,6 +118,23 @@ def test_oldest_signature_paginates_to_oldest():
         assert client.oldest_signature("addr", page_limit=2) == "s1"
 
 
+@respx.mock
+def test_get_token_accounts_returns_total():
+    respx.post(HELIUS_URL).mock(
+        return_value=_json({"result": {"total": 1234, "token_accounts": []}})
+    )
+    with _client() as client:
+        result = client.get_token_accounts("mintA")
+    assert result["total"] == 1234
+
+
+@respx.mock
+def test_holder_count_reads_total():
+    respx.post(HELIUS_URL).mock(return_value=_json({"result": {"total": 1234}}))
+    with _client() as client:
+        assert holder_count(client, "mintA") == 1234
+
+
 def test_fee_payer_extracts_first_account_jsonparsed():
     tx = {"transaction": {"message": {"accountKeys": [
         {"pubkey": "payer", "signer": True}, {"pubkey": "other"}]}}}
@@ -126,6 +146,11 @@ def test_fee_payer_handles_string_keys_and_missing():
     assert fee_payer(tx) == "payerStr"
     assert fee_payer({}) is None
     assert fee_payer({"transaction": {"message": {"accountKeys": []}}}) is None
+
+
+def test_creation_time_from_block_time():
+    assert creation_time({"blockTime": 1700000000}) == "2023-11-14T22:13:20+00:00"
+    assert creation_time({}) is None
 
 
 def test_update_authority_prefers_full_scope():
@@ -164,3 +189,28 @@ def test_resolve_deployer_falls_back_to_update_authority():
     )
     with _client() as client:
         assert resolve_deployer(client, "mintA") == "updAuth"
+
+
+@respx.mock
+def test_resolve_origin_returns_deployer_and_created_at():
+    respx.post(HELIUS_URL).mock(
+        side_effect=[
+            _json({"result": [{"signature": "deploySig"}]}),
+            _json({"result": {"blockTime": 1700000000, "transaction": {"message": {
+                "accountKeys": [{"pubkey": "deployerW"}]}}}}),
+        ]
+    )
+    with _client() as client:
+        assert resolve_origin(client, "mintA") == ("deployerW", "2023-11-14T22:13:20+00:00")
+
+
+@respx.mock
+def test_resolve_origin_fallback_has_no_created_at():
+    respx.post(HELIUS_URL).mock(
+        side_effect=[
+            _json({"result": []}),
+            _json({"result": {"authorities": [{"address": "updAuth", "scopes": ["full"]}]}}),
+        ]
+    )
+    with _client() as client:
+        assert resolve_origin(client, "mintA") == ("updAuth", None)
