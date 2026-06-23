@@ -179,3 +179,55 @@ def test_unknown_method_raises_on_remember():
     bad = [_edge("RUGGED", "w", "t", "2026-02-01", method="claimd")]
     with pytest.raises(ValueError):
         mem.remember(bad, now="2026-02-01")
+
+
+def test_negative_confidence_cannot_lower_risk():
+    # `confidence` is a forgeable float; a negative value must not invert the
+    # noisy-OR and DRAG DOWN a genuine HIGH history — confidence is clamped to [0,1].
+    mem = ForensicMemory(InMemoryRepository())
+    genuine = [_edge("RUGGED", "w", "tA", "2026-02-01"),
+               _edge("RUGGED", "w", "tB", "2026-02-02")]  # two first-party rugs -> HIGH
+    poisoned = genuine + [_edge("RUGGED", "w", "tC", "2026-02-03", conf=-1.0)]
+    assert mem.trust_weighted_risk(genuine) >= 0.6
+    assert mem.trust_weighted_risk(poisoned) >= mem.trust_weighted_risk(genuine)
+
+
+def test_higher_confidence_claim_cannot_supersede_first_party():
+    # method-rank dominates supersession: a forged `claimed` re-assertion — even at
+    # conf=1.0 (out-trusting a low-confidence genuine read) and replaying its source
+    # string — can never retire a first-party belief.
+    mem = ForensicMemory(InMemoryRepository())
+    mem.remember([_edge("RUGGED", "w", "t", "2026-02-01", conf=0.05)], now="2026-02-01")
+    mem.remember([_edge("RUGGED", "w", "t", "2026-02-02", conf=1.0,
+                        source="helius:getAsset", method="claimed")], now="2026-02-02")
+    hist = mem.recall_deployer_history("w")
+    genuine = [e for e in hist if e.provenance.method == "first_party"]
+    assert len(genuine) == 1 and genuine[0].superseded_at is None  # first-party survives
+
+
+def test_first_party_plus_derived_flood_cannot_reach_high():
+    # A single genuine first-party rug plus a flood of planted `derived` edges on
+    # distinct tokens must NOT reach HIGH — `derived` cannot borrow the first-party
+    # ceiling to manufacture a HIGH verdict off one real finding.
+    mem = ForensicMemory(InMemoryRepository())
+    edges = [_edge("RUGGED", "w", "real", "2026-02-01")]  # one genuine first-party rug
+    edges += [
+        _edge("RUGGED", "w", f"inf{i}", "2026-02-01", conf=1.0,
+              source=f"s{i}", method="derived")
+        for i in range(20)
+    ]
+    assert mem.trust_weighted_risk(edges) < 0.6  # stays below HIGH despite the flood
+
+
+def test_method_tie_scoring_is_order_independent():
+    # A fact carrying both a first-party and an equal-trust `derived` edge must score
+    # identically regardless of edge order (no ceiling flip from backend iteration
+    # order): the fact is first-party-tier because a first-party observation exists.
+    mem = ForensicMemory(InMemoryRepository())
+    edges = []
+    for tok in ("tA", "tB", "tC"):
+        edges.append(_edge("RUGGED", "w", tok, "2026-02-01", conf=0.6))  # first_party trust 0.6
+        edges.append(_edge("RUGGED", "w", tok, "2026-02-01", conf=1.0,
+                           source="x", method="derived"))  # derived trust 0.6
+    assert mem.trust_weighted_risk(edges) == mem.trust_weighted_risk(list(reversed(edges)))
+    assert mem.trust_weighted_risk(edges) >= 0.6  # three first-party-tier rugs -> HIGH
