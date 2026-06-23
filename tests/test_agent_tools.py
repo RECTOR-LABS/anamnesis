@@ -46,6 +46,20 @@ def test_remember_then_recall_roundtrips_the_claim():
     assert edge["method"] == "claimed" and edge["type"] == "SAME_CLUSTER"
 
 
+def test_remember_ignores_model_supplied_timestamps():
+    # The model controls neither transaction time nor validity time — the agent stamps both
+    # from its own clock. A malformed/garbage timestamp smuggled into a fact must not crash
+    # the write or discard the rest of the batch; it is simply ignored.
+    mem = ForensicMemory(InMemoryRepository())
+    out = remember_handler(
+        mem, [{"type": "SAME_CLUSTER", "src": "w", "dst": "x", "valid_from": "yesterday"}],
+        now="2026-02-01",
+    )
+    assert out["remembered"] == 1
+    [e] = mem.recall("w")
+    assert e.valid_from == "2026-02-01T00:00:00.000000+00:00"  # agent's clock, not the model's
+
+
 def test_assess_risk_flags_fresh_token_from_remembered_rugger_high():
     # The compounding-memory payoff at the tool layer: a fresh, clean-looking token from a
     # deployer with two REMEMBERED first-party rugs is flagged HIGH on memory alone.

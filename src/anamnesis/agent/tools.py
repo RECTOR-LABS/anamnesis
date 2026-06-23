@@ -83,7 +83,10 @@ def remember_handler(memory: ForensicMemory, facts: list[dict], now: str) -> dic
                 f["type"],
                 f["src"],
                 f["dst"],
-                valid_from=f.get("valid_from") or now,
+                # The agent stamps both time axes from its own clock; the model controls
+                # neither transaction time nor validity time (and cannot crash the batch
+                # with a malformed timestamp it has no business supplying).
+                valid_from=now,
                 recorded_at=now,
                 provenance=Provenance(
                     source=str(f.get("source") or CLAIMED_SOURCE),
