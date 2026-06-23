@@ -17,9 +17,12 @@ fee-payer extraction is validated against a real deploy tx once a Helius key is 
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 import httpx
+
+from .signals import TokenProfile
 
 HELIUS_RPC = "https://mainnet.helius-rpc.com/"
 
@@ -170,3 +173,39 @@ def resolve_origin(client: HeliusClient, mint: str) -> tuple[str | None, str | N
 def resolve_deployer(client: HeliusClient, mint: str) -> str | None:
     """The mint's deployer wallet (its memory key) — see :func:`resolve_origin`."""
     return resolve_origin(client, mint)[0]
+
+
+LpResolver = Callable[[HeliusClient, str], bool]
+
+
+def _lp_unverified(client: HeliusClient, mint: str) -> bool:
+    """Conservative default: liquidity unverified -> treated as not secured (unsafe)."""
+    return False
+
+
+def build_token_profile(
+    client: HeliusClient, mint: str, *, lp_resolver: LpResolver = _lp_unverified
+) -> TokenProfile:
+    """Assemble a ``TokenProfile`` for a mint from grounded Helius reads.
+
+    Pulls authorities + supply (getAsset), holder concentration (largest accounts),
+    holder count (getTokenAccounts), and deployer + creation time (the creation tx).
+    ``lp_resolver`` decides ``lp_secured``; the default treats unverified liquidity as
+    unsecured, pending first-party LP-burn/lock detection.
+    """
+    asset = client.get_asset(mint)
+    info = asset.get("token_info") or {}
+    supply = int(info.get("supply") or 0)
+    mint_authority, freeze_authority = parse_authorities(asset)
+    largest = client.get_token_largest_accounts(mint)
+    deployer, created_at = resolve_origin(client, mint)
+    return TokenProfile(
+        mint=mint,
+        deployer=deployer,
+        mint_authority=mint_authority,
+        freeze_authority=freeze_authority,
+        lp_secured=lp_resolver(client, mint),
+        top_holder_pct=top_holder_pct(largest, supply),
+        holder_count=holder_count(client, mint),
+        created_at=created_at,
+    )

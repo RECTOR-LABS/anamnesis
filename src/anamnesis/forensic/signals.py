@@ -14,7 +14,7 @@ HOLDER_CONCENTRATION_THRESHOLD = 25.0  # percent owned by the top non-LP holder
 @dataclass
 class TokenProfile:
     mint: str
-    deployer: str
+    deployer: str | None  # None == deployer could not be resolved
     mint_authority: str | None  # None == renounced (safe)
     freeze_authority: str | None  # None == renounced (safe)
     lp_secured: bool  # liquidity burned or locked

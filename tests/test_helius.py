@@ -5,6 +5,7 @@ import respx
 from anamnesis.forensic.helius import (
     HeliusClient,
     HeliusError,
+    build_token_profile,
     creation_time,
     fee_payer,
     holder_count,
@@ -214,3 +215,62 @@ def test_resolve_origin_fallback_has_no_created_at():
     )
     with _client() as client:
         assert resolve_origin(client, "mintA") == ("updAuth", None)
+
+
+class _FakeClient:
+    """Order-independent stand-in for HeliusClient — canned forensic reads."""
+
+    def get_asset(self, mint: str) -> dict:
+        return {
+            "token_info": {
+                "supply": 1000,
+                "mint_authority": "deployerW",
+                "freeze_authority": None,
+            },
+            "authorities": [{"address": "deployerW", "scopes": ["full"]}],
+        }
+
+    def get_token_largest_accounts(self, mint: str) -> list[dict]:
+        return [{"address": "acc1", "amount": "300"}]
+
+    def oldest_signature(self, mint: str, **_: object) -> str | None:
+        return "deploySig"
+
+    def get_transaction(self, signature: str) -> dict:
+        return {
+            "blockTime": 1700000000,
+            "transaction": {"message": {"accountKeys": [{"pubkey": "deployerW"}]}},
+        }
+
+    def get_token_accounts(self, mint: str, **_: object) -> dict:
+        return {"total": 742}
+
+
+def test_build_token_profile_assembles_all_fields():
+    profile = build_token_profile(_FakeClient(), "mintA")
+    assert profile.mint == "mintA"
+    assert profile.deployer == "deployerW"            # creation-tx fee payer
+    assert profile.mint_authority == "deployerW"
+    assert profile.freeze_authority is None
+    assert profile.top_holder_pct == 30.0             # 300 / 1000
+    assert profile.holder_count == 742
+    assert profile.created_at == "2023-11-14T22:13:20+00:00"
+    assert profile.lp_secured is False                # conservative default
+
+
+def test_build_token_profile_uses_injected_lp_resolver():
+    profile = build_token_profile(_FakeClient(), "mintA", lp_resolver=lambda c, m: True)
+    assert profile.lp_secured is True
+
+
+class _NoDeployerClient(_FakeClient):
+    def oldest_signature(self, mint: str, **_: object) -> str | None:
+        return None
+
+    def get_asset(self, mint: str) -> dict:
+        return {"token_info": {"supply": 1000}, "authorities": []}
+
+
+def test_build_token_profile_allows_unknown_deployer():
+    profile = build_token_profile(_NoDeployerClient(), "mintA")
+    assert profile.deployer is None
