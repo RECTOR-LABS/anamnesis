@@ -259,6 +259,29 @@ def test_corrupt_stored_method_fails_closed_on_supersession():
         mem.remember([_edge("RUGGED", "w", "t", "2026-02-01")], now="2026-02-01")
 
 
+def test_first_party_cluster_links_alone_cannot_reach_high():
+    # Tuning call (locked): guilt-by-association is capped below HIGH. Even many distinct
+    # first-party SAME_CLUSTER links to known-bad actors corroborate only up to MEDIUM —
+    # only directly-observed RUGS drive HIGH. Without a type ceiling, 4+ links noisy-OR
+    # past 0.6 and reach HIGH on association alone.
+    mem = ForensicMemory(InMemoryRepository())
+    links = [_edge("SAME_CLUSTER", "w", f"bad{i}", "2026-02-01") for i in range(8)]
+    r = mem.trust_weighted_risk(links)
+    assert 0.3 <= r < 0.6  # reaches MEDIUM but is ceiling-capped below HIGH
+
+
+def test_cluster_links_do_not_lift_a_single_rug_to_high():
+    # One observed first-party RUG is MEDIUM; piling on cluster associations (a separate,
+    # MEDIUM-capped tier) cannot push it to HIGH — that still requires a SECOND observed
+    # rug. So cluster evidence corroborates without manufacturing the top verdict.
+    mem = ForensicMemory(InMemoryRepository())
+    edges = (
+        [_edge("RUGGED", "w", "tok", "2026-02-01")]
+        + [_edge("SAME_CLUSTER", "w", f"bad{i}", "2026-02-01") for i in range(8)]
+    )
+    assert 0.3 <= mem.trust_weighted_risk(edges) < 0.6  # MEDIUM, not HIGH
+
+
 def test_same_day_claimed_cannot_clobber_genuine_first_party(repo):
     # B-6: make_edge_id must encode method+source. Otherwise a planted `claimed` edge
     # sharing (type, src, dst, recorded_at) with a genuine first-party one gets the SAME
