@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .models import Edge, Provenance
+from .models import Edge, Provenance, normalize_as_of
 
 COLLECTION = "relations"
 
@@ -67,6 +67,8 @@ class MongoRepository:
         self._col.replace_one({"id": edge.id}, _to_doc(edge), upsert=True)
 
     def find_edges(self, entity_key: str, as_of: str | None = None) -> list[Edge]:
+        if as_of is not None:
+            as_of = normalize_as_of(as_of)  # bare date -> end-of-day UTC; sortable compare
         clauses: list[dict[str, Any]] = [
             {"$or": [{"src": entity_key}, {"dst": entity_key}]},
         ]

@@ -8,6 +8,7 @@ An `Edge` carries two independent time axes plus provenance:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime, time, timezone
 
 
 @dataclass(frozen=True)
@@ -44,3 +45,22 @@ def make_edge_id(
     unambiguously — though the id is only ever compared for equality, never split.
     """
     return f"{type}:{src}->{dst}@{recorded_at}#{method}:{source}"
+
+
+def normalize_as_of(ts: str) -> str:
+    """Canonicalize an as-of query bound to a fixed-width ISO-8601 UTC instant so the
+    lexicographic comparison in ``find_edges`` is exact across mixed input granularity.
+
+    A bare date means "through the END of that day" (``23:59:59.999999``): a fact
+    recorded at any time on that day belongs in the as-of view, and a belief superseded
+    earlier that day is correctly excluded. A naive compare drops/keeps such facts
+    because a bare date is a lexical PREFIX of a same-day datetime and so sorts before
+    it. A value that already carries a time is converted to UTC as-is; fixed-width
+    microseconds keep every emitted string mutually sortable.
+    """
+    if "T" in ts:
+        dt = datetime.fromisoformat(ts)
+        dt = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+    else:
+        dt = datetime.combine(date.fromisoformat(ts), time(23, 59, 59, 999999), tzinfo=timezone.utc)
+    return dt.isoformat(timespec="microseconds")
