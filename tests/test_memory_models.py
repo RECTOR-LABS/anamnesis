@@ -8,7 +8,10 @@ def _edge(**kw) -> Edge:
         superseded_at=None, provenance=Provenance("helius:getAsset", "first_party", 0.95),
     )
     base.update(kw)
-    base["id"] = make_edge_id(base["type"], base["src"], base["dst"], base["recorded_at"])
+    base["id"] = make_edge_id(
+        base["type"], base["src"], base["dst"], base["recorded_at"],
+        base["provenance"].method, base["provenance"].source,
+    )
     return Edge(**base)
 
 

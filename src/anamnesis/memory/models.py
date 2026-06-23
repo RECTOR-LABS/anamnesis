@@ -30,5 +30,17 @@ class Edge:
     provenance: Provenance
 
 
-def make_edge_id(type: str, src: str, dst: str, recorded_at: str) -> str:
-    return f"{type}:{src}->{dst}@{recorded_at}"
+def make_edge_id(
+    type: str, src: str, dst: str, recorded_at: str, method: str, source: str
+) -> str:
+    """A deterministic edge identity that INCLUDES provenance (method, source).
+
+    Two beliefs about the same (type, src, dst) recorded the same day but learned a
+    different WAY (method) or from a different SOURCE are distinct edges. Folding both
+    into the id means a planted `claimed` breadcrumb can neither share an id with nor
+    overwrite (last-write-wins) a genuine first-party observation, and independent
+    same-day corroboration coexists instead of one silently clobbering the other.
+    `method` is a fixed enum with no delimiter, so the `#method:source` segment parses
+    unambiguously — though the id is only ever compared for equality, never split.
+    """
+    return f"{type}:{src}->{dst}@{recorded_at}#{method}:{source}"
