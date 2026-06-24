@@ -69,8 +69,9 @@ Trader ──chat──▶ thin UI + relationship-graph view   (on Alibaba Cloud
                       ▼
         Qwen-Agent  Assistant   (model: qwen-max via DashScope-intl, OpenAI-compatible)
           ├─ MCP toolset ──▶ Solana Forensics MCP  (wraps Helius DAS + Enhanced Tx)
-          │     get_token_profile · get_deployer · trace_funding ·
-          │     get_holders · get_deployer_token_history
+          │     get_token_profile · get_deployer · get_holders
+          │     (trace_funding · get_deployer_token_history — deferred: need a
+          │      funding-source address set + an on-chain mint-scan + live Helius)
           └─ native tools:  recall() · remember() · assess_risk()
                             · watchlist_add() · draft_alert()        (Phase B)
                                 │
@@ -100,8 +101,8 @@ llm_cfg = {
 tools = [
     {"mcpServers": {
         "solana_forensics": {
-            "command": "node",
-            "args": ["mcp/solana-forensics-mcp.js"],
+            "command": "python",   # the project venv interpreter (sys.executable in code)
+            "args": ["mcp/solana_forensics_mcp.py"],
             # HELIUS_API_KEY flows through the child process env, never argv.
         }
     }},
@@ -148,7 +149,7 @@ Fallback if the MCP seam fights us Day 1: call Helius directly as Qwen-Agent fun
 On-chain memory is adversarial — attackers can seed misleading breadcrumbs (e.g., dust transfers to fabricate a `SAME_CLUSTER` link). Defense: every edge's `provenance.confidence` plus a **corroboration count**; `assess_risk` uses **trust-weighted aggregation**, so first-party facts we derived from RPC/DAS dominate and uncorroborated "claims" an adversary could plant carry near-zero weight and cannot flip a verdict. Directly answers the documented 2026 memory-poisoning attack class.
 
 ## Deployment — Alibaba Cloud (mandatory, judged)
-- **Compute:** backend (Python agent + Qwen-Agent WebUI + the Node forensic-MCP child process) on **Alibaba Cloud ECS** (primary). ECS is chosen deliberately over Function Compute: the agent spawns the MCP server as a **child process** (the exact Node-subprocess-in-a-serverless-container seam that bit Velox's Google-Cloud analog), and a persistent VM hosts that cleanly. Function Compute (scale-to-zero, cheaper) is the noted alternative *only if* Phase-0 proves the subprocess model runs there.
+- **Compute:** backend (Python agent + Qwen-Agent WebUI + the Python forensic-MCP child process) on **Alibaba Cloud ECS** (primary). ECS is chosen deliberately over Function Compute: the agent spawns the MCP server as a **child process** (the exact child-subprocess-in-a-serverless-container seam that bit Velox's Google-Cloud analog), and a persistent VM hosts that cleanly. Function Compute (scale-to-zero, cheaper) is the noted alternative *only if* Phase-0 proves the subprocess model runs there.
 - **Memory:** **ApsaraDB for MongoDB** (managed) — also the cleanest "uses Alibaba Cloud services/APIs" proof artifact.
 - **Model:** Qwen via DashScope international (OpenAI-compatible).
 - **Required proof:** a repo code file using the Alibaba Cloud SDK/service (the ApsaraDB client config / Function Compute handler) **+** a short recording of the backend running on Alibaba Cloud.
