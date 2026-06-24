@@ -15,7 +15,7 @@
 - **Qwen-only** for all LLM calls. Model `qwen-max` via `model_type:'oai'`, `model_server: https://dashscope-intl.aliyuncs.com/compatible-mode/v1`, key from `DASHSCOPE_API_KEY`. Confirm the exact model id is accepted on the international endpoint on Day 1; keep `qwen-plus`/`qwen-flash` as the high-volume fallback. **Tools cannot be combined with `stream=True`** in OpenAI-compatible mode.
 - **Secrets via env only**, never argv/committed: `DASHSCOPE_API_KEY`, `HELIUS_API_KEY`, `MONGODB_URI`. `.env` is gitignored; ship `.env.example` with placeholders.
 - **Read-only on-chain** — no signing, trading, or mutating tools. Phase-B "acts" = watchlist + drafted alert with human-in-the-loop only.
-- **Alibaba Cloud deploy is a judged hard requirement:** backend on **ECS** (primary; the Node/Python MCP child process is the Velox-style serverless-subprocess risk), memory on **ApsaraDB-for-MongoDB**. Ship a repo code file using the Alibaba Cloud SDK/service (`deploy/apsaradb.py`) + record the backend running on Alibaba Cloud.
+- **Alibaba Cloud deploy is a judged hard requirement:** backend on **ECS** (primary; the Python MCP child process is the Velox-style serverless-subprocess risk), memory on **ApsaraDB-for-MongoDB**. Ship a repo code file using the Alibaba Cloud SDK/service (`deploy/apsaradb.py`) + record the backend running on Alibaba Cloud.
 - **Public repo**, MIT LICENSE visible, **GPG-signed commits as RECTOR, ZERO AI attribution**.
 - **Defensibility:** every artifact (README, video, Devpost text) leads with *memory + measurable compounding + poisoning-defense*, never "scam detection."
 - **Python style:** 4-space indent, PEP8, `ruff`-clean, type hints on public functions. Comments only for non-obvious logic.
@@ -565,12 +565,19 @@ def compose_verdict(signals: list[Signal], memory_edges: list, memory_risk: floa
 
 ### Task A.8: Forensic MCP server (thin wrapper)
 
-**Files:** Create `mcp/solana_forensics_mcp.py`.
-**Interfaces — Produces** an MCP stdio server exposing `get_token_profile`, `get_deployer`, `trace_funding`, `get_holders`, `get_deployer_token_history` — each a thin call into `forensic/helius.py`.
+**Files:** Create `mcp/solana_forensics_mcp.py`, `src/anamnesis/forensic/mcp_tools.py`.
+**Design:** `docs/design/2026-06-24-a8-mcp-server.md`.
+**Interfaces — Produces** a Python MCP **stdio** server (FastMCP) exposing three thin reads over `forensic/helius.py`: `get_token_profile`, `get_deployer`, `get_holders`. Handlers live in `forensic/mcp_tools.py` (DI'd client, unit-tested); the entrypoint is the thin adapter.
 
-- [ ] **Step 1:** Implement the server with the `mcp` package (stdio); tools return the same dicts `helius.py` produces. `HELIUS_API_KEY` from env.
-- [ ] **Step 2: Smoke:** run the server standalone and list/call one tool via an MCP client snippet → returns a real token profile.
-- [ ] **Step 3: Commit.** `git commit -S -m "feat: Solana forensics MCP server (wraps Helius)"`
+- [x] **Step 1:** Implement `mcp_tools.py` handlers `(client, mint) -> dict` mapping upstream errors to `{"error", "mint"}`; unit-test with a canned fake client (runs in CI).
+- [x] **Step 2:** Implement `mcp/solana_forensics_mcp.py` with FastMCP (`mcp>=1.2`); lazy `HeliusClient` from `HELIUS_API_KEY` (env); `server.run()` (stdio). Registration smoke guarded by `importorskip("mcp")`.
+- [ ] **Step 3: Live smoke (deferred to Helius gate #3):** run the server, list tools, call `get_token_profile` for a real mint → populated profile.
+- [x] **Step 4: Commit.** (landed as `feat: forensic MCP tool handlers…` + `feat: Solana forensics MCP stdio server…`)
+
+### Task A.8b: Funding-trace + deployer-token-history reads (deferred)
+
+**Blocked on:** Helius access (gate #3) to validate tx shapes before the logic is trusted.
+**Produces** two further MCP tools: `trace_funding` (deployer's funding source via parsed tx history → CEX/bridge/mixer, needs a curated address set) and `get_deployer_token_history` (on-chain mint-creation scan over the deployer's signatures). New forensic algorithms, not wrappers — full TDD + live smoke when access lands.
 
 ### Task A.9: Assemble the agent + WebUI
 
@@ -622,7 +629,7 @@ def compose_verdict(signals: list[Signal], memory_edges: list, memory_risk: floa
 
 ## Self-Review (run against SPEC.md)
 
-**Spec coverage:** MemoryAgent track ✓(A.7 prompts, framing) · forensic signals ✓(A.1) · deployer prior-token history = compounding crux ✓(A.3/A.5/A.7) · bi-temporal graph ✓(A.2/A.3 + C.1/C.2) · provenance-weighted poisoning defense ✓(A.3 + C.3) · Qwen-Agent + qwen-max + DashScope-intl ✓(A.9, Global Constraints) · MCP forensic toolset ✓(A.8) · ApsaraDB + ECS + deploy proof ✓(0.3/0.5/A.10/S.4) · "acts" path ✓(B) · WebUI + graph view ✓(A.9/B.3) · demo N× metric ✓(A.10/S.3) · deliverables ✓(S.*). No uncovered spec requirement.
+**Spec coverage:** MemoryAgent track ✓(A.7 prompts, framing) · forensic signals ✓(A.1) · deployer prior-token history = compounding crux ✓(A.3/A.5/A.7) · bi-temporal graph ✓(A.2/A.3 + C.1/C.2) · provenance-weighted poisoning defense ✓(A.3 + C.3) · Qwen-Agent + qwen-max + DashScope-intl ✓(A.9, Global Constraints) · MCP forensic toolset ✓(A.8: 3 reads; trace_funding + deployer-history deferred to A.8b) · ApsaraDB + ECS + deploy proof ✓(0.3/0.5/A.10/S.4) · "acts" path ✓(B) · WebUI + graph view ✓(A.9/B.3) · demo N× metric ✓(A.10/S.3) · deliverables ✓(S.*). No uncovered spec requirement.
 
 **Placeholder scan:** Phase 0 + A carry complete, runnable test+impl code. B/C/S are **intentionally** right-sized outlines (per the inward-out spec quarantining C as stretch) with concrete files, interfaces, and DoD — not vague "implement later." Flag at execution: write each B/C task's failing test first.
 
