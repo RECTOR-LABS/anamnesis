@@ -1,13 +1,17 @@
 """Forensic MCP tool handlers (A.8) — pure over an injected HeliusClient.
 
 Each handler composes the tested helius.py reads into a JSON-able dict for the MCP server to
-return, and maps expected upstream failures (HeliusError / httpx errors) to a structured
-``{"error", "mint"}`` result, so a bad read degrades into an LLM-readable signal instead of
-crashing the stdio loop. The client is injected, so these are unit-tested with a canned fake
-client — no network, no mcp package — and run in CI. The thin entrypoint
+return. The ``@_forensic_read`` decorator is the single boundary that (a) rejects a blank mint
+and (b) degrades any Helius RPC failure OR malformed/edge payload into a structured
+``{"error", "mint"}`` result — so a bad read produces an LLM-readable signal instead of
+crashing the stdio loop. The client is injected, so handlers are unit-tested with a canned
+fake client (no network, no mcp package) and run in CI. The thin entrypoint
 (mcp/solana_forensics_mcp.py) owns the live client.
 """
 from __future__ import annotations
+
+import functools
+from collections.abc import Callable
 
 import httpx
 
@@ -20,15 +24,35 @@ from .helius import (
     top_holder_pct,
 )
 
-_UPSTREAM_ERRORS = (HeliusError, httpx.HTTPError)
+# Degrade (don't crash the stdio loop) on a Helius RPC error OR a malformed/edge payload whose
+# shape breaks parsing: a non-numeric supply (ValueError), a null result or a non-dict holder
+# entry (AttributeError/TypeError), a missing field (KeyError). These handlers ingest
+# adversarial on-chain data, so an unexpected shape must surface as a readable error rather
+# than a traceback. Programmer errors on the happy path are still caught by the exact-dict
+# unit tests (they assert the full result, so a real bug fails them instead of being masked).
+_DEGRADE_ON = (HeliusError, httpx.HTTPError, ValueError, TypeError, AttributeError, KeyError)
 
 
+def _forensic_read(fn: Callable[..., dict]) -> Callable[..., dict]:
+    """Wrap a forensic handler so it never raises past the tool boundary: validate the mint,
+    then turn any degradable failure into a structured ``{"error", "mint"}`` dict."""
+
+    @functools.wraps(fn)
+    def wrapper(client: HeliusClient, mint: str, *args: object, **kwargs: object) -> dict:
+        if not isinstance(mint, str) or not mint.strip():
+            return {"error": "invalid mint: expected a non-empty address string", "mint": mint}
+        try:
+            return fn(client, mint, *args, **kwargs)
+        except _DEGRADE_ON as e:
+            return {"error": str(e), "mint": mint}
+
+    return wrapper
+
+
+@_forensic_read
 def token_profile_dict(client: HeliusClient, mint: str) -> dict:
     """Full forensic profile for a mint (authorities, liquidity, holders, deployer, created_at)."""
-    try:
-        p = build_token_profile(client, mint)
-    except _UPSTREAM_ERRORS as e:
-        return {"error": str(e), "mint": mint}
+    p = build_token_profile(client, mint)
     return {
         "mint": p.mint,
         "deployer": p.deployer,
@@ -41,24 +65,21 @@ def token_profile_dict(client: HeliusClient, mint: str) -> dict:
     }
 
 
+@_forensic_read
 def deployer_dict(client: HeliusClient, mint: str) -> dict:
     """The mint's deployer wallet (memory key) + creation time; nulls when unresolved."""
-    try:
-        deployer, created_at = resolve_origin(client, mint)
-    except _UPSTREAM_ERRORS as e:
-        return {"error": str(e), "mint": mint}
+    deployer, created_at = resolve_origin(client, mint)
     return {"mint": mint, "deployer": deployer, "created_at": created_at}
 
 
+@_forensic_read
 def holders_dict(client: HeliusClient, mint: str, *, top_n: int = 10) -> dict:
     """Holder concentration: total holders, top-holder %, and the largest accounts (<= top_n)."""
-    try:
-        asset = client.get_asset(mint)
-        supply = int((asset.get("token_info") or {}).get("supply") or 0)
-        largest = client.get_token_largest_accounts(mint)
-        count = holder_count(client, mint)
-    except _UPSTREAM_ERRORS as e:
-        return {"error": str(e), "mint": mint}
+    top_n = max(0, top_n)  # negative top_n must not slice from the wrong end (drop the top holder)
+    asset = client.get_asset(mint)
+    supply = int((asset.get("token_info") or {}).get("supply") or 0)
+    largest = client.get_token_largest_accounts(mint)
+    count = holder_count(client, mint)
     return {
         "mint": mint,
         "holder_count": count,

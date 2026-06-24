@@ -81,3 +81,58 @@ def test_handlers_map_upstream_errors_to_structured_result():
         "error": "getAsset failed: boom", "mint": "mintA"}
     assert token_profile_dict(_HttpxRaisingClient(), "mintA") == {
         "error": "network down", "mint": "mintA"}
+
+
+# --- code-review hardening (fixes 1-4): malformed payloads, blank mint, top_n ----------
+
+
+class _NullAssetClient(_FakeClient):
+    # getAsset whose JSON `result` is null -> HeliusClient._rpc returns None.
+    def get_asset(self, mint: str):
+        return None
+
+
+class _BadSupplyClient(_FakeClient):
+    def get_asset(self, mint: str) -> dict:
+        return {"token_info": {"supply": "n/a"}, "authorities": [{"address": "d", "scopes": ["full"]}]}
+
+
+class _NonDictHoldersClient(_FakeClient):
+    def get_token_largest_accounts(self, mint: str) -> list:
+        return [None]  # malformed value entry (not a dict)
+
+
+class _DeployerRpcErrorClient(_FakeClient):
+    def oldest_signature(self, mint: str, **_: object):
+        raise HeliusError("getSignaturesForAddress failed: 429")
+
+
+def test_blank_mint_is_rejected_at_the_boundary():
+    # mint validation on the public entry points (no wasted RPC, clear error).
+    for handler in (token_profile_dict, deployer_dict, holders_dict):
+        out = handler(_FakeClient(), "   ")
+        assert "error" in out and out["mint"] == "   "
+    assert "error" in token_profile_dict(_FakeClient(), "")
+
+
+def test_handlers_degrade_on_malformed_payload():
+    # A null getAsset result, a non-numeric supply, and a non-dict holder entry must each
+    # degrade to {"error", "mint"} instead of crashing the stdio loop.
+    assert "error" in token_profile_dict(_NullAssetClient(), "mintA")
+    assert "error" in holders_dict(_NullAssetClient(), "mintA")
+    assert "error" in holders_dict(_BadSupplyClient(), "mintA")
+    assert "error" in holders_dict(_NonDictHoldersClient(), "mintA")
+
+
+def test_deployer_dict_degrades_on_rpc_error():
+    # The previously-untested deployer_dict error branch: an RPC error on its primary read
+    # (oldest_signature) degrades, it does not bubble out of the stdio loop.
+    assert deployer_dict(_DeployerRpcErrorClient(), "mintA") == {
+        "error": "getSignaturesForAddress failed: 429", "mint": "mintA"}
+
+
+def test_holders_dict_clamps_nonpositive_top_n():
+    # A negative top_n must NOT silently slice from the wrong end (dropping the top holder);
+    # it clamps to an empty list rather than returning a misleading subset.
+    assert holders_dict(_FakeClient(), "mintA", top_n=-1)["largest"] == []
+    assert holders_dict(_FakeClient(), "mintA", top_n=0)["largest"] == []
