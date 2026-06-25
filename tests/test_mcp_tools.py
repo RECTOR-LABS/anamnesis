@@ -9,7 +9,12 @@ from __future__ import annotations
 import httpx
 
 from anamnesis.forensic.helius import HeliusError
-from anamnesis.forensic.mcp_tools import deployer_dict, holders_dict, token_profile_dict
+from anamnesis.forensic.mcp_tools import (
+    deployer_dict,
+    holders_dict,
+    token_profile_dict,
+    trace_funding_dict,
+)
 
 
 class _FakeClient:
@@ -136,3 +141,38 @@ def test_holders_dict_clamps_nonpositive_top_n():
     # it clamps to an empty list rather than returning a misleading subset.
     assert holders_dict(_FakeClient(), "mintA", top_n=-1)["largest"] == []
     assert holders_dict(_FakeClient(), "mintA", top_n=0)["largest"] == []
+
+
+# --- A.8b: trace_funding handler ----------------------------------------------------------
+
+
+class _FundingClient:
+    # mint creation tx -> deployer "depl"; deployer's earliest tx -> funder "cexHot"
+    def oldest_signature(self, address, **_):
+        return {"mintA": "createSig", "depl": "fundSig"}.get(address)
+
+    def get_transaction(self, signature):
+        payer = {"createSig": "depl", "fundSig": "cexHot"}[signature]
+        return {"blockTime": 1700000000,
+                "transaction": {"message": {"accountKeys": [{"pubkey": payer}]}}}
+
+    def get_asset(self, mint):  # resolve_origin fallback (unused once the sig resolves)
+        return {"authorities": []}
+
+
+def test_trace_funding_dict_classifies_known_funder(monkeypatch):
+    monkeypatch.setattr("anamnesis.forensic.helius.FUNDING_SOURCES", {"cexHot": "cex"})
+    out = trace_funding_dict(_FundingClient(), "mintA")
+    assert out == {"mint": "mintA", "deployer": "depl", "funder": "cexHot",
+                   "source_type": "cex", "funded_at": "2023-11-14T22:13:20+00:00"}
+
+
+def test_trace_funding_dict_unknown_when_self_funded():
+    out = trace_funding_dict(_FakeClient(), "mintA")
+    assert out == {"mint": "mintA", "deployer": "deployerW", "funder": None,
+                   "source_type": "unknown", "funded_at": None}
+
+
+def test_trace_funding_dict_degrades_on_rpc_error():
+    assert trace_funding_dict(_DeployerRpcErrorClient(), "mintA") == {
+        "error": "getSignaturesForAddress failed: 429", "mint": "mintA"}

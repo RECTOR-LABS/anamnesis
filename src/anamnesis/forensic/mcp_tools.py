@@ -19,6 +19,8 @@ from .helius import (
     HeliusClient,
     HeliusError,
     build_token_profile,
+    classify_funder,
+    funder_of,
     holder_count,
     resolve_origin,
     top_holder_pct,
@@ -87,4 +89,19 @@ def holders_dict(client: HeliusClient, mint: str, *, top_n: int = 10) -> dict:
         "largest": [
             {"address": a.get("address"), "amount": a.get("amount")} for a in largest[:top_n]
         ],
+    }
+
+
+@_forensic_read
+def trace_funding_dict(client: HeliusClient, mint: str) -> dict:
+    """The deployer's 1-hop funding source: the wallet that funded the deployer and its category
+    (cex/bridge/mixer/unknown). funder is null when no inbound funder is identifiable."""
+    deployer, _ = resolve_origin(client, mint)
+    funder, funded_at = funder_of(client, deployer)
+    return {
+        "mint": mint,
+        "deployer": deployer,
+        "funder": funder,
+        "source_type": classify_funder(funder),
+        "funded_at": funded_at,
     }
