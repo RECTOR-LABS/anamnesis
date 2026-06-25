@@ -145,6 +145,15 @@ def verify_fungible(helius, pool: PoolRef, venue: str, lp_mint_offset: int) -> L
                           "pool account had no decodable data", pool.liquidity_usd)
     lp_mint = _pubkey_at(data_b64, lp_mint_offset)
     supply = helius.get_token_supply(lp_mint)
+    if supply == 0:
+        # Zero circulating LP == a full SPL burn: with real reserves the liquidity is locked
+        # forever (no LP left to redeem). With no reserves it is a defunct/never-seeded pool.
+        if (pool.liquidity_usd or 0.0) >= DUST_LIQUIDITY_USD:
+            return LpEvidence(venue, pool.pool, lp_mint, "lp_mint_burned", True,
+                              f"{venue} LP fully burned: zero circulating LP supply; "
+                              "liquidity permanently locked.", pool.liquidity_usd, citation=lp_mint)
+        return LpEvidence(venue, pool.pool, lp_mint, "verify_failed", None,
+                          "zero LP supply and no real reserves (defunct pool)", pool.liquidity_usd)
     holders = largest_holders_with_owners(helius, lp_mint)
     frac = secured_fraction(holders, supply)
     locker_owner = next((h["owner"] for h in holders if h.get("owner") in LP_LOCKERS), None)

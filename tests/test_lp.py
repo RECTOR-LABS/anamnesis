@@ -249,3 +249,39 @@ def test_analyzer_discovery_failure_is_unknown():
     out = LpAnalyzer(_Dex()).assess(object(), "mintA")
     assert out.status is LpStatus.UNKNOWN
     assert out.evidence[0].method == "discovery_failed"
+
+
+def test_verify_fungible_zero_supply_with_reserves_is_burned_secured():
+    fx = _FX["raydium_v4"]
+
+    class _C:
+        def get_account_info(self, addr, *, encoding="jsonParsed"):
+            return {"data": [fx["data_b64"], "base64"]}
+
+        def get_token_supply(self, mint):
+            return 0  # full SPL burn -> zero circulating LP
+
+        def get_token_largest_accounts(self, mint):
+            return []
+
+    ev = verify_fungible(_C(), PoolRef(fx["pool"], "raydium", 50_000.0),
+                         "raydium_v4", RAYDIUM_V4_LP_MINT_OFFSET)
+    assert ev.secured is True and ev.method == "lp_mint_burned"
+
+
+def test_verify_fungible_zero_supply_no_reserves_is_unknown():
+    fx = _FX["raydium_v4"]
+
+    class _C:
+        def get_account_info(self, addr, *, encoding="jsonParsed"):
+            return {"data": [fx["data_b64"], "base64"]}
+
+        def get_token_supply(self, mint):
+            return 0
+
+        def get_token_largest_accounts(self, mint):
+            return []
+
+    ev = verify_fungible(_C(), PoolRef(fx["pool"], "raydium", 100.0),  # dust -> defunct, not secured
+                         "raydium_v4", RAYDIUM_V4_LP_MINT_OFFSET)
+    assert ev.secured is None and ev.method == "verify_failed"
