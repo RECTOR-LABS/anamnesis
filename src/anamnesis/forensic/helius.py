@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from .signals import TokenProfile
+from .signals import LpAssessment, LpStatus, TokenProfile
 
 HELIUS_RPC = "https://mainnet.helius-rpc.com/"
 
@@ -316,23 +316,27 @@ def created_mints(
     return out, True
 
 
-LpResolver = Callable[[HeliusClient, str], bool]
+LpResolver = Callable[[HeliusClient, str], LpAssessment]
 
 
-def _lp_unverified(client: HeliusClient, mint: str) -> bool:
-    """Conservative default: liquidity unverified -> treated as not secured (unsafe)."""
-    return False
+def _lp_unanalyzed(client: HeliusClient, mint: str) -> LpAssessment:
+    """Default: liquidity not analyzed -> honest UNKNOWN (never a false 'not secured').
+
+    The real LpAnalyzer (forensic/lp.py) is injected by the caller (MCP entrypoint); keeping
+    it out of helius.py keeps this module free of the aggregator/lp dependency.
+    """
+    return LpAssessment(LpStatus.UNKNOWN, [])
 
 
 def build_token_profile(
-    client: HeliusClient, mint: str, *, lp_resolver: LpResolver = _lp_unverified
+    client: HeliusClient, mint: str, *, lp_resolver: LpResolver = _lp_unanalyzed
 ) -> TokenProfile:
     """Assemble a ``TokenProfile`` for a mint from grounded Helius reads.
 
     Pulls authorities + supply (getAsset), holder concentration (largest accounts),
     holder count (getTokenAccounts), and deployer + creation time (the creation tx).
-    ``lp_resolver`` decides ``lp_secured``; the default treats unverified liquidity as
-    unsecured, pending first-party LP-burn/lock detection.
+    ``lp_resolver`` decides ``lp``; the default reports UNKNOWN (not analyzed) — the real
+    LpAnalyzer is injected by the MCP entrypoint.
     """
     asset = client.get_asset(mint)
     info = asset.get("token_info") or {}
@@ -345,7 +349,7 @@ def build_token_profile(
         deployer=deployer,
         mint_authority=mint_authority,
         freeze_authority=freeze_authority,
-        lp_secured=lp_resolver(client, mint),
+        lp=lp_resolver(client, mint),
         top_holder_pct=top_holder_pct(largest, supply),
         holder_count=holder_count(client, mint),
         created_at=created_at,

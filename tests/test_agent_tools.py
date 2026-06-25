@@ -8,7 +8,7 @@ assembly (A.9), where qwen-agent is installed.
 """
 from anamnesis.agent.prompts import SYSTEM_INSTRUCTION
 from anamnesis.agent.tools import assess_risk_handler, recall_handler, remember_handler
-from anamnesis.forensic.signals import TokenProfile
+from anamnesis.forensic.signals import LpAssessment, LpStatus, TokenProfile
 from anamnesis.memory.graph import ForensicMemory
 from anamnesis.memory.models import Provenance, make_edge
 from anamnesis.memory.repository import InMemoryRepository
@@ -74,7 +74,7 @@ def test_assess_risk_flags_fresh_token_from_remembered_rugger_high():
         now="2026-01-05",
     )
     clean = TokenProfile(mint="tokFresh", deployer="ruggerX", mint_authority=None,
-                         freeze_authority=None, lp_secured=True, top_holder_pct=2.0,
+                         freeze_authority=None, lp=LpAssessment(LpStatus.SECURED), top_holder_pct=2.0,
                          holder_count=300)
     out = assess_risk_handler(mem, lambda mint: clean, "tokFresh")
     assert out["level"] == "high"
@@ -84,7 +84,7 @@ def test_assess_risk_flags_fresh_token_from_remembered_rugger_high():
 def test_assess_risk_unknown_deployer_is_low():
     mem = ForensicMemory(InMemoryRepository())
     clean = TokenProfile(mint="m", deployer="freshWallet", mint_authority=None,
-                         freeze_authority=None, lp_secured=True, top_holder_pct=2.0,
+                         freeze_authority=None, lp=LpAssessment(LpStatus.SECURED), top_holder_pct=2.0,
                          holder_count=300)
     out = assess_risk_handler(mem, lambda mint: clean, "m")
     assert out["level"] == "low"

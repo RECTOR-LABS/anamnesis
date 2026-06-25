@@ -1,5 +1,5 @@
 from anamnesis.assess import assess_risk
-from anamnesis.forensic.signals import TokenProfile
+from anamnesis.forensic.signals import LpAssessment, LpEvidence, LpStatus, TokenProfile
 from anamnesis.memory.graph import ForensicMemory
 from anamnesis.memory.models import Edge, Provenance, make_edge_id
 from anamnesis.memory.repository import InMemoryRepository
@@ -15,7 +15,7 @@ def _edge(type_, src, dst, rec, conf=0.95, source="helius:getAsset"):
 def _profile(deployer, **kw):
     base = dict(
         mint="m", deployer=deployer, mint_authority=None, freeze_authority=None,
-        lp_secured=True, top_holder_pct=2.0, holder_count=300,
+        lp=LpAssessment(LpStatus.SECURED), top_holder_pct=2.0, holder_count=300,
     )
     base.update(kw)
     return TokenProfile(**base)
@@ -48,7 +48,9 @@ def test_clean_token_unknown_deployer_is_low():
 def test_live_high_signals_alone_drive_high_without_memory():
     mem = ForensicMemory(InMemoryRepository())
     risky = _profile(
-        "w", mint_authority="w", freeze_authority="w", lp_secured=False, top_holder_pct=40.0
+        "w", mint_authority="w", freeze_authority="w", top_holder_pct=40.0,
+        lp=LpAssessment(LpStatus.NOT_SECURED,
+                        [LpEvidence("raydium_v4", "P", "L", "withdrawable", False, "d", 50_000.0)]),
     )
     verdict = assess_risk(risky, mem)
     assert verdict.level == "high"

@@ -19,6 +19,7 @@ from anamnesis.forensic.helius import (
     top_holder_pct,
     update_authority,
 )
+from anamnesis.forensic.signals import LpAssessment, LpStatus
 
 HELIUS_URL = "https://mainnet.helius-rpc.com/?api-key=test-key"
 
@@ -322,12 +323,14 @@ def test_build_token_profile_assembles_all_fields():
     assert profile.top_holder_pct == 30.0             # 300 / 1000
     assert profile.holder_count == 742
     assert profile.created_at == "2023-11-14T22:13:20+00:00"
-    assert profile.lp_secured is False                # conservative default
+    assert profile.lp.status is LpStatus.UNKNOWN       # honest default (not analyzed)
 
 
 def test_build_token_profile_uses_injected_lp_resolver():
-    profile = build_token_profile(_FakeClient(), "mintA", lp_resolver=lambda c, m: True)
-    assert profile.lp_secured is True
+    profile = build_token_profile(
+        _FakeClient(), "mintA", lp_resolver=lambda c, m: LpAssessment(LpStatus.SECURED)
+    )
+    assert profile.lp.status is LpStatus.SECURED
 
 
 class _NoDeployerClient(_FakeClient):

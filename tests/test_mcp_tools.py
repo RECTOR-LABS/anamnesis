@@ -16,6 +16,7 @@ from anamnesis.forensic.mcp_tools import (
     token_profile_dict,
     trace_funding_dict,
 )
+from anamnesis.forensic.signals import LpAssessment, LpEvidence, LpStatus
 
 
 class _FakeClient:
@@ -41,7 +42,7 @@ class _FakeClient:
         return {"total": 742}
 
 
-def test_token_profile_dict_serializes_all_fields():
+def test_token_profile_dict_default_resolver_reports_unknown_lp():
     out = token_profile_dict(_FakeClient(), "mintA")
     assert out == {
         "mint": "mintA",
@@ -49,10 +50,24 @@ def test_token_profile_dict_serializes_all_fields():
         "created_at": "2023-11-14T22:13:20+00:00",
         "mint_authority": "deployerW",
         "freeze_authority": None,
-        "lp_secured": False,
+        "lp": {"status": "unknown", "evidence": []},
         "top_holder_pct": 30.0,
         "holder_count": 742,
     }
+    assert "lp_secured" not in out
+
+
+def test_token_profile_dict_surfaces_injected_lp_evidence():
+    out = token_profile_dict(
+        _FakeClient(), "mintA",
+        lp_resolver=lambda c, m: LpAssessment(LpStatus.SECURED, [
+            LpEvidence("raydium_v4", "POOL", "LPMINT", "lp_mint_burned", True, "burned",
+                       50_000.0, "LPMINT")]),
+    )
+    assert out["lp"]["status"] == "secured"
+    assert out["lp"]["evidence"][0] == {
+        "venue": "raydium_v4", "pool": "POOL", "lp_mint": "LPMINT", "method": "lp_mint_burned",
+        "secured": True, "detail": "burned", "liquidity_usd": 50_000.0, "citation": "LPMINT"}
 
 
 def test_deployer_dict_returns_deployer_and_created_at():
