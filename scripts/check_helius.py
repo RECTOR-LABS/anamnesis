@@ -1,7 +1,7 @@
 """Phase-0 access smoke (gate #3): prove the Helius data layer by pulling a real
 token's authorities via DAS getAsset — the riskiest seam, so confirm it early.
 
-Prereqs: ``pip install httpx`` and HELIUS_API_KEY set in .env.
+Prereqs: ``pip install httpx`` and ANAMNESIS_HELIUS_API_KEY set in .env.
 Run:     ``PYTHONPATH=src python scripts/check_helius.py``
 Expect:  a non-empty ``authorities: [...]`` list for the test mint.
 """
