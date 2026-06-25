@@ -4,7 +4,7 @@ Launches Qwen-Agent's built-in WebUI over build_agent() — the judged chat surf
 import is deferred into main() so importing this module (e.g. to verify CHATBOT_CONFIG) does
 not require the heavy GUI extra, which CI does not install.
 
-Run locally:  python app.py   (needs DASHSCOPE_API_KEY + HELIUS_API_KEY in the env)
+Run locally:  python app.py   (needs ANAMNESIS_DASHSCOPE_API_KEY + ANAMNESIS_HELIUS_API_KEY in the env)
 """
 from anamnesis.agent.agent import build_agent
 

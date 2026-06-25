@@ -48,10 +48,10 @@ def test_build_function_list_spawns_under_this_interpreter_then_native_tools():
 
 def test_build_agent_missing_dashscope_key_raises_actionable_error(monkeypatch):
     # Runs in CI too: config.require() raises BEFORE the qwen-agent import is reached.
-    monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+    monkeypatch.delenv("ANAMNESIS_DASHSCOPE_API_KEY", raising=False)
     from anamnesis.agent.agent import build_agent
 
-    with pytest.raises(RuntimeError, match="DASHSCOPE_API_KEY"):
+    with pytest.raises(RuntimeError, match="ANAMNESIS_DASHSCOPE_API_KEY"):
         build_agent()
 
 
@@ -61,7 +61,7 @@ def test_build_agent_assembles_native_and_mcp_tools(monkeypatch):
     # Skipped in CI, which installs neither qwen-agent nor mcp.
     pytest.importorskip("qwen_agent")
     pytest.importorskip("mcp")
-    monkeypatch.setenv("DASHSCOPE_API_KEY", "dummy-key-for-construction")
+    monkeypatch.setenv("ANAMNESIS_DASHSCOPE_API_KEY", "dummy-key-for-construction")
     from anamnesis.agent.agent import build_agent
 
     agent = build_agent()

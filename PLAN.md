@@ -12,8 +12,8 @@
 
 *Every task's requirements implicitly include this section. Values copied verbatim from SPEC.md.*
 
-- **Qwen-only** for all LLM calls. Model `qwen-max` via `model_type:'oai'`, `model_server: https://dashscope-intl.aliyuncs.com/compatible-mode/v1`, key from `DASHSCOPE_API_KEY`. Confirm the exact model id is accepted on the international endpoint on Day 1; keep `qwen-plus`/`qwen-flash` as the high-volume fallback. **Tools cannot be combined with `stream=True`** in OpenAI-compatible mode.
-- **Secrets via env only**, never argv/committed: `DASHSCOPE_API_KEY`, `HELIUS_API_KEY`, `MONGODB_URI`. `.env` is gitignored; ship `.env.example` with placeholders.
+- **Qwen-only** for all LLM calls. Model `qwen-max` via `model_type:'oai'`, `model_server: https://dashscope-intl.aliyuncs.com/compatible-mode/v1`, key from `ANAMNESIS_DASHSCOPE_API_KEY`. Confirm the exact model id is accepted on the international endpoint on Day 1; keep `qwen-plus`/`qwen-flash` as the high-volume fallback. **Tools cannot be combined with `stream=True`** in OpenAI-compatible mode.
+- **Secrets via env only**, never argv/committed: `ANAMNESIS_DASHSCOPE_API_KEY`, `ANAMNESIS_HELIUS_API_KEY`, `ANAMNESIS_MONGODB_URI`. `.env` is gitignored; ship `.env.example` with placeholders.
 - **Read-only on-chain** — no signing, trading, or mutating tools. Phase-B "acts" = watchlist + drafted alert with human-in-the-loop only.
 - **Alibaba Cloud deploy is a judged hard requirement:** backend on **ECS** (primary; the Python MCP child process is the Velox-style serverless-subprocess risk), memory on **ApsaraDB-for-MongoDB**. Ship a repo code file using the Alibaba Cloud SDK/service (`deploy/apsaradb.py`) + record the backend running on Alibaba Cloud.
 - **Public repo**, MIT LICENSE visible, **GPG-signed commits as RECTOR, ZERO AI attribution**.
@@ -99,9 +99,9 @@ testpaths = ["tests"]
 
 ```
 # Copy to .env (gitignored). Never commit real values.
-DASHSCOPE_API_KEY=
-HELIUS_API_KEY=
-MONGODB_URI=
+ANAMNESIS_DASHSCOPE_API_KEY=
+ANAMNESIS_HELIUS_API_KEY=
+ANAMNESIS_MONGODB_URI=
 ANAMNESIS_DB=anamnesis
 QWEN_MODEL=qwen-max
 ```
@@ -123,7 +123,7 @@ git add -A && git commit -S -m "chore: scaffold anamnesis project"
 
 **Files:** Create `src/anamnesis/config.py`, `scripts/check_qwen.py`.
 
-- [ ] **Step 1:** *(manual)* Register a Qwen Cloud account from Indonesia; generate a key for the **international** endpoint; put it in `.env` as `DASHSCOPE_API_KEY`. **If registration is blocked, STOP and escalate to RECTOR** — this is access gate #1.
+- [ ] **Step 1:** *(manual)* Register a Qwen Cloud account from Indonesia; generate a key for the **international** endpoint; put it in `.env` as `ANAMNESIS_DASHSCOPE_API_KEY`. **If registration is blocked, STOP and escalate to RECTOR** — this is access gate #1.
 
 - [ ] **Step 2: Write `config.py`** — a single loader with actionable errors:
 
@@ -146,7 +146,7 @@ QWEN_MODEL = os.environ.get("QWEN_MODEL", "qwen-max")
 from openai import OpenAI
 from anamnesis.config import DASHSCOPE_BASE_URL, QWEN_MODEL, require
 
-client = OpenAI(api_key=require("DASHSCOPE_API_KEY"), base_url=DASHSCOPE_BASE_URL)
+client = OpenAI(api_key=require("ANAMNESIS_DASHSCOPE_API_KEY"), base_url=DASHSCOPE_BASE_URL)
 r = client.chat.completions.create(model=QWEN_MODEL,
         messages=[{"role": "user", "content": "Reply with exactly: OK"}])
 print(QWEN_MODEL, "->", r.choices[0].message.content)
@@ -160,7 +160,7 @@ print(QWEN_MODEL, "->", r.choices[0].message.content)
 
 **Files:** Create `deploy/apsaradb.py`.
 
-- [ ] **Step 1:** *(manual)* Create Alibaba Cloud account; **claim hackathon cloud credits via the voucher form**; provision an **ApsaraDB-for-MongoDB** instance (smallest tier); whitelist your IP; copy the URI into `.env` `MONGODB_URI`. Access gate #2.
+- [ ] **Step 1:** *(manual)* Create Alibaba Cloud account; **claim hackathon cloud credits via the voucher form**; provision an **ApsaraDB-for-MongoDB** instance (smallest tier); whitelist your IP; copy the URI into `.env` `ANAMNESIS_MONGODB_URI`. Access gate #2.
 
 - [ ] **Step 2: Write `deploy/apsaradb.py`** — the connection helper that **doubles as the Alibaba-deploy-proof artifact** (this exact file is the link you submit):
 
@@ -171,8 +171,8 @@ from pymongo import MongoClient
 from anamnesis.config import require
 
 def connect() -> MongoClient:
-    # MONGODB_URI points at an ApsaraDB-for-MongoDB (Alibaba Cloud) instance.
-    return MongoClient(require("MONGODB_URI"), serverSelectionTimeoutMS=10000)
+    # ANAMNESIS_MONGODB_URI points at an ApsaraDB-for-MongoDB (Alibaba Cloud) instance.
+    return MongoClient(require("ANAMNESIS_MONGODB_URI"), serverSelectionTimeoutMS=10000)
 ```
 
 - [ ] **Step 3: Smoke — ping ApsaraDB.** Run: `python -c "from deploy.apsaradb import connect; connect().admin.command('ping'); print('ApsaraDB OK')"` → Expected: `ApsaraDB OK`.
@@ -183,7 +183,7 @@ def connect() -> MongoClient:
 
 **Files:** Create `scripts/check_helius.py`.
 
-- [ ] **Step 1:** Get a Helius API key; set `HELIUS_API_KEY` in `.env`.
+- [ ] **Step 1:** Get a Helius API key; set `ANAMNESIS_HELIUS_API_KEY` in `.env`.
 
 - [ ] **Step 2: Write `scripts/check_helius.py`** — pull a real token's authorities via DAS `getAsset`:
 
@@ -192,7 +192,7 @@ import httpx
 from anamnesis.config import require
 
 mint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # USDC; replace w/ a test memecoin
-url = f"https://mainnet.helius-rpc.com/?api-key={require('HELIUS_API_KEY')}"
+url = f"https://mainnet.helius-rpc.com/?api-key={require('ANAMNESIS_HELIUS_API_KEY')}"
 r = httpx.post(url, json={"jsonrpc": "2.0", "id": "1", "method": "getAsset",
                           "params": {"id": mint}}, timeout=20).json()
 auth = r["result"].get("authorities", [])
@@ -550,7 +550,7 @@ def compose_verdict(signals: list[Signal], memory_edges: list, memory_risk: floa
 **Interfaces — Produces:** `MongoRepository(client, db_name)` implementing the `Repository` protocol (A.2) against a `relations` collection; same `upsert_edge`/`find_edges` semantics as `InMemoryRepository`, with a unique index on `id` and indexes on `src`, `dst`.
 
 - [ ] **Step 1:** Implement `MongoRepository` — serialize `Edge`/`Provenance` to documents; `upsert_edge` = `replace_one({"id": edge.id}, doc, upsert=True)`; `find_edges` translates the same bi-temporal filters into a Mongo query. Create indexes in `__init__`.
-- [ ] **Step 2: Contract test:** run the **A.2 + A.3 test bodies** against a `MongoRepository` pointed at a local MongoDB (or ApsaraDB) — same assertions must pass (proves the fake and the real store agree). Run: `MONGODB_URI=... pytest tests/test_memory_graph.py -q --store=mongo` (param via `conftest`).
+- [ ] **Step 2: Contract test:** run the **A.2 + A.3 test bodies** against a `MongoRepository` pointed at a local MongoDB (or ApsaraDB) — same assertions must pass (proves the fake and the real store agree). Run: `ANAMNESIS_MONGODB_URI=... pytest tests/test_memory_graph.py -q --store=mongo` (param via `conftest`).
 - [ ] **Step 3: Commit.** `git commit -S -m "feat: ApsaraDB/Mongo repository (bi-temporal store)"`
 
 ### Task A.7: Agent native tools (wraps pure core)
@@ -570,7 +570,7 @@ def compose_verdict(signals: list[Signal], memory_edges: list, memory_risk: floa
 **Interfaces — Produces** a Python MCP **stdio** server (FastMCP) exposing three thin reads over `forensic/helius.py`: `get_token_profile`, `get_deployer`, `get_holders`. Handlers live in `forensic/mcp_tools.py` (DI'd client, unit-tested); the entrypoint is the thin adapter.
 
 - [x] **Step 1:** Implement `mcp_tools.py` handlers `(client, mint) -> dict` mapping upstream errors to `{"error", "mint"}`; unit-test with a canned fake client (runs in CI).
-- [x] **Step 2:** Implement `mcp/solana_forensics_mcp.py` with FastMCP (`mcp>=1.2`); lazy `HeliusClient` from `HELIUS_API_KEY` (env); `server.run()` (stdio). Registration smoke guarded by `importorskip("mcp")`.
+- [x] **Step 2:** Implement `mcp/solana_forensics_mcp.py` with FastMCP (`mcp>=1.2`); lazy `HeliusClient` from `ANAMNESIS_HELIUS_API_KEY` (env); `server.run()` (stdio). Registration smoke guarded by `importorskip("mcp")`.
 - [ ] **Step 3: Live smoke (deferred to Helius gate #3):** run the server, list tools, call `get_token_profile` for a real mint → populated profile.
 - [x] **Step 4: Commit.** (landed as `feat: forensic MCP tool handlers…` + `feat: Solana forensics MCP stdio server…`)
 

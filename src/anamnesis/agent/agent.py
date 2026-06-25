@@ -45,7 +45,7 @@ def mcp_entrypoint_path() -> Path:
 def build_function_list() -> list:
     """The Assistant's function_list: the forensic MCP server (spawned as a stdio child under
     this same interpreter, so it has anamnesis + mcp installed) plus the native memory tools by
-    name. HELIUS_API_KEY reaches the child only through its inherited env, never argv."""
+    name. ANAMNESIS_HELIUS_API_KEY reaches the child only through its inherited env, never argv."""
     return [
         {
             "mcpServers": {
@@ -63,12 +63,12 @@ def build_agent():
     """Assemble the Anamnesis Qwen-Agent Assistant: native memory tools (A.7) + the forensic
     MCP server (A.8), system instruction from prompts.py, qwen-max over DashScope-intl.
 
-    DASHSCOPE_API_KEY is resolved FIRST — before the qwen-agent import — so a missing key
+    ANAMNESIS_DASHSCOPE_API_KEY is resolved FIRST — before the qwen-agent import — so a missing key
     raises an actionable RuntimeError, and that path stays testable in CI (where qwen-agent is
     absent). Importing anamnesis.agent.tools fires its @register_tool decorators so the native
     tool names resolve against Qwen-Agent's TOOL_REGISTRY before the Assistant is built.
     """
-    api_key = config.require("DASHSCOPE_API_KEY")
+    api_key = config.require("ANAMNESIS_DASHSCOPE_API_KEY")
 
     from qwen_agent.agents import Assistant
 

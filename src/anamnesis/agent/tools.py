@@ -142,14 +142,14 @@ if register_tool is not None:  # pragma: no cover - requires qwen-agent + live s
         if _memory_singleton is None:
             from pymongo import MongoClient
 
-            client = MongoClient(config.require("MONGODB_URI"))
+            client = MongoClient(config.require("ANAMNESIS_MONGODB_URI"))
             _memory_singleton = ForensicMemory(MongoRepository(client, config.ANAMNESIS_DB))
         return _memory_singleton
 
     def _helius() -> HeliusClient:
         global _helius_singleton
         if _helius_singleton is None:
-            _helius_singleton = HeliusClient(config.require("HELIUS_API_KEY"))
+            _helius_singleton = HeliusClient(config.require("ANAMNESIS_HELIUS_API_KEY"))
         return _helius_singleton
 
     def _now() -> str:
