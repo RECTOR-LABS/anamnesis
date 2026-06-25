@@ -149,6 +149,29 @@ def test_raydium_cpmm_offset_decodes_known_lp_mint():
     assert _pubkey_at(fx["data_b64"], RAYDIUM_CPMM_LP_MINT_OFFSET) == fx["lp_mint"]
 
 
+def test_pumpswap_offset_decodes_known_lp_mint():
+    from anamnesis.forensic.lp import PUMPSWAP_LP_MINT_OFFSET
+
+    fx = _FX["pumpswap"]
+    assert PUMPSWAP_LP_MINT_OFFSET == fx["offset"]
+    assert _pubkey_at(fx["data_b64"], PUMPSWAP_LP_MINT_OFFSET) == fx["lp_mint"]
+
+
+def test_meteora_damm_v1_offset_decodes_known_lp_mint():
+    from anamnesis.forensic.lp import METEORA_DAMM_V1_LP_MINT_OFFSET
+
+    fx = _FX["meteora_damm_v1"]
+    assert METEORA_DAMM_V1_LP_MINT_OFFSET == fx["offset"]
+    assert _pubkey_at(fx["data_b64"], METEORA_DAMM_V1_LP_MINT_OFFSET) == fx["lp_mint"]
+
+
+def test_phase1b_fungible_venues_registered():
+    # PumpSwap + Meteora DAMM v1 must be wired into dispatch, not just have offset constants.
+    from anamnesis.forensic.lp import _VENUE_VERIFIERS
+
+    assert {"pumpswap", "meteora_damm_v1"} <= set(_VENUE_VERIFIERS)
+
+
 def test_verify_fungible_burned_is_secured():
     fx = _FX["raydium_v4"]
     ev = verify_fungible(_burned_client(fx), PoolRef(fx["pool"], "raydium", 50_000.0),

@@ -70,6 +70,8 @@ PROGRAM_TO_VENUE: dict[str, str] = {
 # (tests/fixtures/lp_pool_accounts.json); see test_*_offset_decodes_known_lp_mint.
 RAYDIUM_V4_LP_MINT_OFFSET = 464    # AmmInfo.lp_mint
 RAYDIUM_CPMM_LP_MINT_OFFSET = 136  # PoolState.lp_mint (after 8-byte Anchor discriminator)
+PUMPSWAP_LP_MINT_OFFSET = 107      # pump_amm Pool.lp_mint (disc + bump/index/creator/base/quote)
+METEORA_DAMM_V1_LP_MINT_OFFSET = 8 # dynamic-amm Pool.lp_mint (first field after discriminator)
 
 
 def secured_fraction(holders: list[dict], supply: int) -> float:
@@ -192,6 +194,8 @@ def _fungible_verifier(venue: str, lp_mint_offset: int) -> Callable[..., LpEvide
 _VENUE_VERIFIERS: dict[str, Callable[..., LpEvidence]] = {
     "raydium_v4": _fungible_verifier("raydium_v4", RAYDIUM_V4_LP_MINT_OFFSET),
     "raydium_cpmm": _fungible_verifier("raydium_cpmm", RAYDIUM_CPMM_LP_MINT_OFFSET),
+    "pumpswap": _fungible_verifier("pumpswap", PUMPSWAP_LP_MINT_OFFSET),
+    "meteora_damm_v1": _fungible_verifier("meteora_damm_v1", METEORA_DAMM_V1_LP_MINT_OFFSET),
 }
 # A per-pool read may hit an RPC error or an unexpected on-chain shape; degrade that pool to
 # 'unknown' rather than crash the whole assessment (the verdict stays honest, never false-secure).
