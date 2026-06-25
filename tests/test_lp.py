@@ -1,12 +1,41 @@
+import base64
+import json
+from pathlib import Path
+
 from anamnesis.forensic.lp import (
     INCINERATOR,
     LP_LOCKERS,
+    RAYDIUM_CPMM_LP_MINT_OFFSET,
+    RAYDIUM_V4_LP_MINT_OFFSET,
+    _b58encode,
+    _pubkey_at,
     aggregate,
     largest_holders_with_owners,
     secured_fraction,
     venue_of,
+    verify_fungible,
 )
+from anamnesis.forensic.pools import PoolRef
 from anamnesis.forensic.signals import LpEvidence, LpStatus
+
+_FX = json.loads((Path(__file__).parent / "fixtures" / "lp_pool_accounts.json").read_text())
+
+
+def _burned_client(fx):
+    """Fake Helius: returns the real pool account for fx['pool']; every LP holder = incinerator."""
+    class _C:
+        def get_account_info(self, addr, *, encoding="jsonParsed"):
+            if addr == fx["pool"]:
+                return {"data": [fx["data_b64"], "base64"]}
+            return {"data": {"parsed": {"info": {"owner": INCINERATOR}}}}
+
+        def get_token_supply(self, mint):
+            return 1000
+
+        def get_token_largest_accounts(self, mint):
+            return [{"address": "TA", "amount": "1000"}]
+
+    return _C()
 
 _LOCKER = next(iter(LP_LOCKERS))  # a curated locker program id
 
@@ -92,3 +121,79 @@ def test_largest_holders_with_owners_resolves_each_owner():
     )
     holders = largest_holders_with_owners(c, "lpMint")
     assert holders == [{"owner": "incin", "amount": "600"}, {"owner": "deployer", "amount": "400"}]
+
+
+def test_b58encode_known_vectors():
+    assert _b58encode(b"") == ""
+    assert _b58encode(b"\x00") == "1"
+    assert _b58encode(b"\x00" * 32) == "1" * 32   # 32 zero bytes -> 32 leading '1's
+    assert _b58encode(bytes([58])) == "21"        # 58 = 1*58 + 0
+
+
+def test_pubkey_at_slices_decodes_and_b58_encodes():
+    raw = bytes(range(40))                          # deterministic 40-byte blob
+    data_b64 = base64.b64encode(raw).decode()
+    assert _pubkey_at(data_b64, 8) == _b58encode(raw[8:40])   # pubkey = 32 bytes at offset 8
+
+
+def test_raydium_v4_offset_decodes_known_lp_mint():
+    fx = _FX["raydium_v4"]
+    assert RAYDIUM_V4_LP_MINT_OFFSET == fx["offset"]
+    assert _pubkey_at(fx["data_b64"], RAYDIUM_V4_LP_MINT_OFFSET) == fx["lp_mint"]
+
+
+def test_raydium_cpmm_offset_decodes_known_lp_mint():
+    fx = _FX["raydium_cpmm"]
+    assert RAYDIUM_CPMM_LP_MINT_OFFSET == fx["offset"]
+    assert _pubkey_at(fx["data_b64"], RAYDIUM_CPMM_LP_MINT_OFFSET) == fx["lp_mint"]
+
+
+def test_verify_fungible_burned_is_secured():
+    fx = _FX["raydium_v4"]
+    ev = verify_fungible(_burned_client(fx), PoolRef(fx["pool"], "raydium", 50_000.0),
+                         "raydium_v4", RAYDIUM_V4_LP_MINT_OFFSET)
+    assert ev.secured is True
+    assert ev.method == "lp_mint_burned"
+    assert ev.lp_mint == fx["lp_mint"]
+    assert ev.venue == "raydium_v4"
+
+
+def test_verify_fungible_withdrawable_is_not_secured():
+    fx = _FX["raydium_v4"]
+
+    class _C:
+        def get_account_info(self, addr, *, encoding="jsonParsed"):
+            if addr == fx["pool"]:
+                return {"data": [fx["data_b64"], "base64"]}
+            return {"data": {"parsed": {"info": {"owner": "deployerWallet"}}}}
+
+        def get_token_supply(self, mint):
+            return 1000
+
+        def get_token_largest_accounts(self, mint):
+            return [{"address": "TA", "amount": "1000"}]
+
+    ev = verify_fungible(_C(), PoolRef(fx["pool"], "raydium", 50_000.0),
+                         "raydium_v4", RAYDIUM_V4_LP_MINT_OFFSET)
+    assert ev.secured is False and ev.method == "withdrawable"
+
+
+def test_verify_fungible_locker_held_is_secured_locked():
+    fx = _FX["raydium_v4"]
+    locker = next(iter(LP_LOCKERS))
+
+    class _C:
+        def get_account_info(self, addr, *, encoding="jsonParsed"):
+            if addr == fx["pool"]:
+                return {"data": [fx["data_b64"], "base64"]}
+            return {"data": {"parsed": {"info": {"owner": locker}}}}
+
+        def get_token_supply(self, mint):
+            return 1000
+
+        def get_token_largest_accounts(self, mint):
+            return [{"address": "TA", "amount": "1000"}]
+
+    ev = verify_fungible(_C(), PoolRef(fx["pool"], "raydium", 50_000.0),
+                         "raydium_v4", RAYDIUM_V4_LP_MINT_OFFSET)
+    assert ev.secured is True and ev.method.startswith("lp_locked:")

@@ -8,7 +8,30 @@ locker program. Aggregator output is never trusted for the verdict — only on-c
 """
 from __future__ import annotations
 
+import base64
+
+from .pools import PoolRef
 from .signals import LpEvidence, LpStatus
+
+_B58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+
+def _b58encode(raw: bytes) -> str:
+    """Base58-encode raw bytes (Solana pubkey encoding — no checksum). Inlined to avoid a
+    runtime dependency the fixed-subset CI would not install (see project CI notes)."""
+    n = int.from_bytes(raw, "big")
+    out = ""
+    while n > 0:
+        n, rem = divmod(n, 58)
+        out = _B58_ALPHABET[rem] + out
+    pad = len(raw) - len(raw.lstrip(b"\x00"))  # leading zero bytes -> leading '1's
+    return "1" * pad + out
+
+
+def _pubkey_at(data_b64: str, offset: int) -> str:
+    """Decode the base58 pubkey of the 32 bytes at ``offset`` in base64 account data."""
+    raw = base64.b64decode(data_b64)
+    return _b58encode(raw[offset:offset + 32])
 
 # Canonical Solana burn account: tokens sent here are unspendable (supply is NOT decremented).
 INCINERATOR = "1nc1nerator11111111111111111111111111111111"
@@ -37,6 +60,11 @@ PROGRAM_TO_VENUE: dict[str, str] = {
     "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P": "pumpfun_curve",
 }
 FUNGIBLE_LP_VENUES = frozenset({"raydium_v4", "raydium_cpmm", "meteora_damm_v1", "pumpswap"})
+
+# lp_mint byte offsets in each pool's account layout — pinned against live fixtures
+# (tests/fixtures/lp_pool_accounts.json); see test_*_offset_decodes_known_lp_mint.
+RAYDIUM_V4_LP_MINT_OFFSET = 464    # AmmInfo.lp_mint
+RAYDIUM_CPMM_LP_MINT_OFFSET = 136  # PoolState.lp_mint (after 8-byte Anchor discriminator)
 
 
 def secured_fraction(holders: list[dict], supply: int) -> float:
@@ -93,3 +121,33 @@ def largest_holders_with_owners(helius, lp_mint: str) -> list[dict]:
     for acc in helius.get_token_largest_accounts(lp_mint):
         out.append({"owner": token_account_owner(helius, acc.get("address")), "amount": acc.get("amount")})
     return out
+
+
+def _classify(frac: float, locker_owner: str | None) -> tuple[bool, str]:
+    """Map a secured fraction + any locker owner to (secured, method)."""
+    if locker_owner:
+        return True, f"lp_locked:{LP_LOCKERS.get(locker_owner, 'locker')}"
+    if frac >= SECURED_FRACTION_THRESHOLD:
+        return True, "lp_mint_burned"
+    return False, "withdrawable"
+
+
+def verify_fungible(helius, pool: PoolRef, venue: str, lp_mint_offset: int) -> LpEvidence:
+    """Resolve a fungible pool's LP mint on-chain, then prove burned/locked vs withdrawable."""
+    acct = helius.get_account_info(pool.pool, encoding="base64")
+    data = acct.get("data")
+    data_b64 = data[0] if isinstance(data, list) and data else None
+    if not data_b64:
+        return LpEvidence(venue, pool.pool, None, "verify_failed", None,
+                          "pool account had no decodable data", pool.liquidity_usd)
+    lp_mint = _pubkey_at(data_b64, lp_mint_offset)
+    supply = helius.get_token_supply(lp_mint)
+    holders = largest_holders_with_owners(helius, lp_mint)
+    frac = secured_fraction(holders, supply)
+    locker_owner = next((h["owner"] for h in holders if h.get("owner") in LP_LOCKERS), None)
+    secured, method = _classify(frac, locker_owner)
+    note = " (lock duration unverified — Phase 1)" if method.startswith("lp_locked") else ""
+    detail = (f"{venue} LP {'secured' if secured else 'withdrawable'}: "
+              f"{frac:.0%} of supply burned/locked via {method}{note}.")
+    return LpEvidence(venue, pool.pool, lp_mint, method, secured, detail, pool.liquidity_usd,
+                      citation=lp_mint)
