@@ -13,6 +13,8 @@ Two access gates must clear in the first 48h, before real build:
 1. **Qwen Cloud account + API key issuance from Indonesia** works (near-certain — Alibaba has a Jakarta region — but unverified until we sign up).
 2. **Alibaba Cloud account + hackathon cloud credits** claimed (voucher form), since deployment proof on Alibaba Cloud is a hard, judged requirement.
 
+> **How to open + verify each gate (one command each):** see [`docs/runbooks/access-gates.md`](docs/runbooks/access-gates.md).
+
 ## Hackathon context (authoritative)
 - **Event:** Global AI Hackathon Series with Qwen Cloud (Devpost). Online. [qwencloud-hackathon.devpost.com](https://qwencloud-hackathon.devpost.com/)
 - **Submission window:** May 25 → **Jul 9, 2026 2:00 PM PDT**. Judging Jul 10–31; winners ~Aug 7.
