@@ -34,6 +34,62 @@ the first 48h" and §"Deployment — Alibaba Cloud").
 
 ---
 
+## Cost model — target ≈ $0
+
+SPEC's budget rule is *"target spend ≈ credits only"* — i.e. **~$0 out of pocket**, on free
+tiers + the hackathon voucher. Verified Jun 2026 (cloud prices move; confidence flagged).
+
+| Component | Best case (free tiers + voucher) | Worst case (no free tier) | Confidence |
+|---|---|---|---|
+| Qwen API (`qwen-max`/`qwen-plus`) | **$0** — 1M free tokens *per model*, 90d, **intl endpoint only**; + $40 voucher | ~$1–3 for the whole build | HIGH |
+| ECS (backend) | **$0** — new-user free trial (1c/1GB, 12 mo) | ~$3.50–15 / mo | HIGH / MED |
+| ApsaraDB MongoDB | **$0** — 1-month free trial covers the demo window | **~$30–55 / mo** ⚠️ | LOW (console-gated) |
+| **Out of pocket** | **≈ $0** (only a ~$1 refundable card-verification hold) | **≈ $30–55** | — |
+
+**Account note:** creating the Alibaba Cloud account is free but **requires a payment method**
+(card/PayPal) + a ~$1 hold that is refunded. No upfront ID verification for international use.
+
+**The $0 playbook:**
+1. Claim the **$40 hackathon voucher** — <https://www.qwencloud.com/challenge/hackathon/voucher-application> — using the **same email** as your Devpost registration. (Whether it covers ECS/ApsaraDB or API-only is undocumented; treat it as API budget.)
+2. Claim the **ApsaraDB MongoDB 1-month free trial** — zeroes the biggest cost *and* keeps the clean Alibaba proof artifact.
+3. Claim the **ECS 12-month free trial** for the backend.
+4. Use the **international / Singapore endpoint** — the 1M free token quota does **not** exist on the Global (US-Virginia) endpoint.
+5. **Release every instance** the moment the demo is recorded.
+
+**Biggest cost driver:** ApsaraDB MongoDB *managed compute* (~$30–55/mo, unverified). The
+1-month free trial removes it for the demo window. Last-resort fallback if the trial is
+unavailable: self-host MongoDB Community on the free ECS box (loses the cleaner ApsaraDB proof).
+
+**Could not verify (do not bank on):** exact ApsaraDB compute price · whether the $40 covers
+ECS/ApsaraDB or API-only · headline new-user credit amount (sources span $300–$1,700).
+
+---
+
+## Deployment decisions (what runs where, and why)
+
+**Alibaba Cloud deployment is a pass/fail Stage-1 requirement** — the judged backend must run on
+Alibaba Cloud, with a recording (SPEC §"Deployment — Alibaba Cloud"). That constraint, not cost,
+decides the host.
+
+| Stage | Host | Why |
+|---|---|---|
+| Develop / iterate | **reclabs3** (your VPS) or local | Persistent VM hosts the agent + its MCP stdio child cleanly; $0; fast |
+| **Judged deploy + demo recording** | **Alibaba ECS + ApsaraDB** | Satisfies the mandatory Alibaba proof; both free-trial → $0 |
+
+**Ruled out:**
+- **Vercel (compute)** — (1) not Alibaba → fails the deploy gate; (2) serverless cannot host the
+  agent, which spawns a **persistent FastMCP stdio child process**. SPEC rejected Alibaba's own
+  Function Compute for this exact child-process seam; Vercel is the same serverless model.
+- **Vercel MongoDB integration** — a non-Alibaba DB (Atlas, etc.) weakens the "uses Alibaba Cloud
+  services" proof and saves nothing (the ApsaraDB free trial is already $0). Keep ApsaraDB.
+- **Ollama Cloud / any non-Qwen-Cloud model** — *"Qwen models on Qwen Cloud"* is a hard rule, and
+  `qwen-max` is closed-weight (DashScope-only; not served by Ollama). Qwen Cloud end to end.
+
+**Portability:** config is env-var driven (`ANAMNESIS_*`), so dev → ECS is just env + redeploy —
+no lock-in. Build on reclabs3; ship the final live demo to ECS and record it there.
+
+---
+
 ## Gate #1 — Qwen / DashScope (`ANAMNESIS_DASHSCOPE_API_KEY`)
 
 The agent calls `qwen-max` through the DashScope **international**, OpenAI-compatible endpoint
