@@ -70,8 +70,7 @@ Trader ──chat──▶ thin UI + relationship-graph view   (on Alibaba Cloud
         Qwen-Agent  Assistant   (model: qwen-max via DashScope-intl, OpenAI-compatible)
           ├─ MCP toolset ──▶ Solana Forensics MCP  (wraps Helius DAS + Enhanced Tx)
           │     get_token_profile · get_deployer · get_holders
-          │     (trace_funding · get_deployer_token_history — deferred: need a
-          │      funding-source address set + an on-chain mint-scan + live Helius)
+          │     trace_funding · get_deployer_token_history
           └─ native tools:  recall() · remember() · assess_risk()
                             · watchlist_add() · draft_alert()        (Phase B)
                                 │

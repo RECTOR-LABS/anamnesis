@@ -574,10 +574,9 @@ def compose_verdict(signals: list[Signal], memory_edges: list, memory_risk: floa
 - [ ] **Step 3: Live smoke (deferred to Helius gate #3):** run the server, list tools, call `get_token_profile` for a real mint → populated profile.
 - [x] **Step 4: Commit.** (landed as `feat: forensic MCP tool handlers…` + `feat: Solana forensics MCP stdio server…`)
 
-### Task A.8b: Funding-trace + deployer-token-history reads (deferred)
+### Task A.8b: Funding-trace + deployer-token-history reads ✅ DONE
 
-**Blocked on:** Helius access (gate #3) to validate tx shapes before the logic is trusted.
-**Produces** two further MCP tools: `trace_funding` (deployer's funding source via parsed tx history → CEX/bridge/mixer, needs a curated address set) and `get_deployer_token_history` (on-chain mint-creation scan over the deployer's signatures). New forensic algorithms, not wrappers — full TDD + live smoke when access lands.
+**Produces** two further MCP tools: `trace_funding` (deployer's 1-hop funding source = the seeding-tx fee payer, classified CEX/bridge/mixer via a curated, cite-or-omit address set) and `get_deployer_token_history` (bounded on-chain mint-creation scan over the deployer's signatures, with an honest `truncated` flag). New forensic algorithms, not wrappers. Design `docs/design/2026-06-25-a8b-funding-deployer-history-design.md` · plan `docs/plans/2026-06-25-a8b-funding-deployer-history.md`. Five-tool surface; TDD'd, and `created_mint_in_tx` (incl. pump.fun CPI inner instructions) + the funder path live-validated on mainnet.
 
 ### Task A.9: Assemble the agent + WebUI
 
@@ -629,7 +628,7 @@ def compose_verdict(signals: list[Signal], memory_edges: list, memory_risk: floa
 
 ## Self-Review (run against SPEC.md)
 
-**Spec coverage:** MemoryAgent track ✓(A.7 prompts, framing) · forensic signals ✓(A.1) · deployer prior-token history = compounding crux ✓(A.3/A.5/A.7) · bi-temporal graph ✓(A.2/A.3 + C.1/C.2) · provenance-weighted poisoning defense ✓(A.3 + C.3) · Qwen-Agent + qwen-max + DashScope-intl ✓(A.9, Global Constraints) · MCP forensic toolset ✓(A.8: 3 reads; trace_funding + deployer-history deferred to A.8b) · ApsaraDB + ECS + deploy proof ✓(0.3/0.5/A.10/S.4) · "acts" path ✓(B) · WebUI + graph view ✓(A.9/B.3) · demo N× metric ✓(A.10/S.3) · deliverables ✓(S.*). No uncovered spec requirement.
+**Spec coverage:** MemoryAgent track ✓(A.7 prompts, framing) · forensic signals ✓(A.1) · deployer prior-token history = compounding crux ✓(A.3/A.5/A.7) · bi-temporal graph ✓(A.2/A.3 + C.1/C.2) · provenance-weighted poisoning defense ✓(A.3 + C.3) · Qwen-Agent + qwen-max + DashScope-intl ✓(A.9, Global Constraints) · MCP forensic toolset ✓(A.8: 3 reads; A.8b: +trace_funding +get_deployer_token_history) · ApsaraDB + ECS + deploy proof ✓(0.3/0.5/A.10/S.4) · "acts" path ✓(B) · WebUI + graph view ✓(A.9/B.3) · demo N× metric ✓(A.10/S.3) · deliverables ✓(S.*). No uncovered spec requirement.
 
 **Placeholder scan:** Phase 0 + A carry complete, runnable test+impl code. B/C/S are **intentionally** right-sized outlines (per the inward-out spec quarantining C as stretch) with concrete files, interfaces, and DoD — not vague "implement later." Flag at execution: write each B/C task's failing test first.
 
