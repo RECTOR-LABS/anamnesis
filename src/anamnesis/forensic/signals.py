@@ -6,9 +6,34 @@ without a network or a database.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
 
 HOLDER_CONCENTRATION_THRESHOLD = 25.0  # percent owned by the top non-LP holder
+
+
+class LpStatus(str, Enum):
+    SECURED = "secured"
+    NOT_SECURED = "not_secured"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class LpEvidence:
+    venue: str            # raydium_v4 | raydium_cpmm | meteora_damm_v1 | pumpswap | pumpfun_curve | unknown
+    pool: str             # pool / pair address
+    lp_mint: str | None   # resolved LP mint (None for bonding curve / unresolved)
+    method: str           # lp_mint_burned | lp_locked:<locker> | bonding_curve_custody | withdrawable | position_nft_unverified | discovery_failed | verify_failed
+    secured: bool | None  # True | False | None(=unknown for this pool)
+    detail: str
+    liquidity_usd: float | None = None
+    citation: str | None = None
+
+
+@dataclass
+class LpAssessment:
+    status: LpStatus
+    evidence: list[LpEvidence] = field(default_factory=list)
 
 
 @dataclass
