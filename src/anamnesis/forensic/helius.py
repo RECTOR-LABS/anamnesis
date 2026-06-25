@@ -17,6 +17,7 @@ fee-payer extraction is validated against a real deploy tx once a Helius key is 
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 
@@ -63,9 +64,10 @@ class HeliusError(RuntimeError):
 class HeliusClient:
     """Minimal Helius JSON-RPC client (DAS getAsset + standard token/tx RPC)."""
 
-    def __init__(self, api_key: str, *, timeout: float = 20.0) -> None:
+    def __init__(self, api_key: str, *, timeout: float = 20.0, max_retries: int = 4) -> None:
         self._url = f"{HELIUS_RPC}?api-key={api_key}"
         self._client = httpx.Client(timeout=timeout)
+        self._max_retries = max_retries
 
     def __enter__(self) -> HeliusClient:
         return self
@@ -77,18 +79,24 @@ class HeliusClient:
         self._client.close()
 
     def _rpc(self, method: str, params: dict | list) -> dict | list:
-        try:
-            resp = self._client.post(
-                self._url,
-                json={"jsonrpc": "2.0", "id": "anamnesis", "method": method, "params": params},
-            )
-            resp.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            # NEVER surface self._url — it carries the api-key. Scrub to the status code only.
-            raise HeliusError(f"{method} failed: HTTP {e.response.status_code}") from None
-        except httpx.HTTPError as e:
-            # Transport errors (connect/read/timeout) also reference the api-key URL — scrub.
-            raise HeliusError(f"{method} request failed: {type(e).__name__}") from None
+        body = {"jsonrpc": "2.0", "id": "anamnesis", "method": method, "params": params}
+        attempt = 0
+        while True:
+            try:
+                resp = self._client.post(self._url, json=body)
+                resp.raise_for_status()
+                break
+            except httpx.HTTPStatusError as e:
+                # Retry rate-limits (429) with bounded exponential backoff; on give-up NEVER
+                # surface self._url (it carries the api-key) — scrub to the status code only.
+                if e.response.status_code == 429 and attempt < self._max_retries:
+                    time.sleep(min(2.0, 0.25 * 2 ** attempt))
+                    attempt += 1
+                    continue
+                raise HeliusError(f"{method} failed: HTTP {e.response.status_code}") from None
+            except httpx.HTTPError as e:
+                # Transport errors (connect/read/timeout) also reference the api-key URL — scrub.
+                raise HeliusError(f"{method} request failed: {type(e).__name__}") from None
         data = resp.json()
         if data.get("error"):
             raise HeliusError(f"{method} failed: {data['error']}")

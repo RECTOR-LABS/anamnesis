@@ -484,7 +484,16 @@ def test_get_account_info_null_account_is_empty_dict():
 def test_rpc_http_error_does_not_leak_api_key():
     """A 4xx/5xx must surface as a scrubbed HeliusError — never the api-key-bearing URL."""
     respx.post(HELIUS_URL).mock(return_value=httpx.Response(429, text="rate limited"))
-    with _client() as client, pytest.raises(HeliusError) as exc:
+    with HeliusClient("test-key", max_retries=0) as client, pytest.raises(HeliusError) as exc:
         client.get_asset("mintA")
     assert "test-key" not in str(exc.value)
     assert "429" in str(exc.value)
+
+
+@respx.mock
+def test_rpc_retries_on_429_then_succeeds():
+    respx.post(HELIUS_URL).mock(
+        side_effect=[httpx.Response(429), _json({"result": {"id": "mintA"}})]
+    )
+    with HeliusClient("test-key", max_retries=2) as client:
+        assert client.get_asset("mintA") == {"id": "mintA"}

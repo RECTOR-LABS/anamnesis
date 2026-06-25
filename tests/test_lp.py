@@ -285,3 +285,26 @@ def test_verify_fungible_zero_supply_no_reserves_is_unknown():
     ev = verify_fungible(_C(), PoolRef(fx["pool"], "raydium", 100.0),  # dust -> defunct, not secured
                          "raydium_v4", RAYDIUM_V4_LP_MINT_OFFSET)
     assert ev.secured is None and ev.method == "verify_failed"
+
+
+def test_largest_holders_with_owners_caps_to_top_n():
+    largest = [{"address": f"TA{i}", "amount": "1"} for i in range(20)]
+    accounts = {f"TA{i}": {"data": {"parsed": {"info": {"owner": f"o{i}"}}}} for i in range(20)}
+    holders = largest_holders_with_owners(_AcctClient(accounts, largest=largest), "lpMint", top=3)
+    assert len(holders) == 3 and holders[0]["owner"] == "o0"
+
+
+def test_analyzer_caps_pools_and_notes_skipped():
+    pairs = [{"pairAddress": f"P{i}", "dexId": "x", "liquidity": {"usd": float(i)}} for i in range(20)]
+
+    class _Dex:
+        def token_pairs(self, mint):
+            return pairs
+
+    class _Helius:
+        def get_account_info(self, addr, *, encoding="jsonParsed"):
+            return {"owner": "unknownProg"}  # unrecognised venue -> no further calls
+
+    out = LpAnalyzer(_Dex()).assess(_Helius(), "m")
+    capped = [e for e in out.evidence if e.method == "not_verified_capped"]
+    assert capped and "5 smaller pools" in capped[0].detail  # 20 - 15 cap = 5 skipped

@@ -52,6 +52,8 @@ LP_LOCKERS: dict[str, str] = {
 
 SECURED_FRACTION_THRESHOLD = 0.95  # >= this fraction of current LP supply burned+locked => pool secured
 DUST_LIQUIDITY_USD = 1_000.0       # pools below this are recorded but never drive the verdict (decoy guard)
+TOP_HOLDERS_CHECKED = 6            # burned/locked LP concentrates in the largest holders; bound owner calls
+MAX_POOLS_VERIFIED = 15            # bound RPC fan-out; the verdict hinges on the largest-liquidity pools
 
 # Owning-program -> venue label. Routing by on-chain owner is the grounded alternative to the
 # aggregator's ambiguous dexId (V4/CPMM/CLMM all read dexId == "raydium").
@@ -118,10 +120,14 @@ def token_account_owner(helius, token_account: str) -> str | None:
     return (parsed.get("info") or {}).get("owner")
 
 
-def largest_holders_with_owners(helius, lp_mint: str) -> list[dict]:
-    """Top LP-token holders annotated with their resolved owner (for secured_fraction)."""
+def largest_holders_with_owners(helius, lp_mint: str, *, top: int = TOP_HOLDERS_CHECKED) -> list[dict]:
+    """Top-``top`` LP-token holders annotated with their resolved owner (for secured_fraction).
+
+    Bounded because burned/locked LP concentrates in the largest holders; resolving the owner of
+    every one of the (up to 20) largest accounts is the dominant RPC cost on high-pool tokens.
+    """
     out: list[dict] = []
-    for acc in helius.get_token_largest_accounts(lp_mint):
+    for acc in helius.get_token_largest_accounts(lp_mint)[:top]:
         out.append({"owner": token_account_owner(helius, acc.get("address")), "amount": acc.get("amount")})
     return out
 
@@ -189,7 +195,14 @@ class LpAnalyzer:
         except AggregatorError as e:
             return LpAssessment(LpStatus.UNKNOWN, [LpEvidence(
                 "unknown", "", None, "discovery_failed", None, f"pool discovery failed: {e}")])
-        evidence = [self._verify(helius, p) for p in pools]
+        pools.sort(key=lambda p: p.liquidity_usd or 0.0, reverse=True)
+        evidence = [self._verify(helius, p) for p in pools[:MAX_POOLS_VERIFIED]]
+        if len(pools) > MAX_POOLS_VERIFIED:
+            skipped = len(pools) - MAX_POOLS_VERIFIED
+            evidence.append(LpEvidence(
+                "*", "", None, "not_verified_capped", None,
+                f"{skipped} smaller pools beyond the top-{MAX_POOLS_VERIFIED} liquidity cap were "
+                "not individually verified.", None))
         return LpAssessment(aggregate(evidence), evidence)
 
     def _verify(self, helius, pool: PoolRef) -> LpEvidence:
