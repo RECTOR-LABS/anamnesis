@@ -18,6 +18,7 @@ import httpx
 from .helius import (
     HeliusClient,
     HeliusError,
+    _lp_unanalyzed,
     build_token_profile,
     classify_funder,
     created_mints,
@@ -53,16 +54,27 @@ def _forensic_read(fn: Callable[..., dict]) -> Callable[..., dict]:
 
 
 @_forensic_read
-def token_profile_dict(client: HeliusClient, mint: str) -> dict:
-    """Full forensic profile for a mint (authorities, liquidity, holders, deployer, created_at)."""
-    p = build_token_profile(client, mint)
+def token_profile_dict(client: HeliusClient, mint: str, *, lp_resolver=_lp_unanalyzed) -> dict:
+    """Full forensic profile for a mint (authorities, liquidity, holders, deployer, created_at).
+
+    ``lp_resolver`` is injected by the entrypoint with the real LpAnalyzer; the default reports
+    LP status ``unknown`` (not analyzed)."""
+    p = build_token_profile(client, mint, lp_resolver=lp_resolver)
     return {
         "mint": p.mint,
         "deployer": p.deployer,
         "created_at": p.created_at,
         "mint_authority": p.mint_authority,
         "freeze_authority": p.freeze_authority,
-        "lp_secured": p.lp_secured,
+        "lp": {
+            "status": p.lp.status.value,
+            "evidence": [
+                {"venue": e.venue, "pool": e.pool, "lp_mint": e.lp_mint, "method": e.method,
+                 "secured": e.secured, "detail": e.detail, "liquidity_usd": e.liquidity_usd,
+                 "citation": e.citation}
+                for e in p.lp.evidence
+            ],
+        },
         "top_holder_pct": p.top_holder_pct,
         "holder_count": p.holder_count,
     }

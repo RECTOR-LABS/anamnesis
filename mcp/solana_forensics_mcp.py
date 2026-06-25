@@ -13,6 +13,7 @@ from mcp.server.fastmcp import FastMCP
 
 from anamnesis import config
 from anamnesis.forensic.helius import HeliusClient
+from anamnesis.forensic.lp import LpAnalyzer
 from anamnesis.forensic.mcp_tools import (
     deployer_dict,
     deployer_token_history_dict,
@@ -20,6 +21,7 @@ from anamnesis.forensic.mcp_tools import (
     token_profile_dict,
     trace_funding_dict,
 )
+from anamnesis.forensic.pools import DexScreenerClient
 
 # Instance named `server` (not `mcp`) to avoid shadowing the imported package.
 server = FastMCP("solana-forensics")
@@ -35,11 +37,22 @@ def _helius() -> HeliusClient:
     return _client
 
 
+_dex: DexScreenerClient | None = None
+
+
+def _dexscreener() -> DexScreenerClient:
+    """Lazily build one keyless DexScreener client, reused across LP analyses in this process."""
+    global _dex
+    if _dex is None:
+        _dex = DexScreenerClient()
+    return _dex
+
+
 @server.tool()
 def get_token_profile(mint: str) -> dict:
-    """Full forensic profile for a token mint: authorities (null == renounced), liquidity,
-    holder concentration, the deployer wallet, and the creation time."""
-    return token_profile_dict(_helius(), mint)
+    """Full forensic profile for a token mint: authorities (null == renounced), per-pool LP
+    burn/lock evidence, holder concentration, the deployer wallet, and the creation time."""
+    return token_profile_dict(_helius(), mint, lp_resolver=LpAnalyzer(_dexscreener()).assess)
 
 
 @server.tool()
@@ -80,7 +93,11 @@ def main() -> None:
     client on shutdown.
     """
     with _helius():
-        server.run()
+        try:
+            server.run()
+        finally:
+            if _dex is not None:
+                _dex.close()
 
 
 if __name__ == "__main__":

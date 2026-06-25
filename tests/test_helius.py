@@ -19,6 +19,7 @@ from anamnesis.forensic.helius import (
     top_holder_pct,
     update_authority,
 )
+from anamnesis.forensic.signals import LpAssessment, LpStatus
 
 HELIUS_URL = "https://mainnet.helius-rpc.com/?api-key=test-key"
 
@@ -322,12 +323,14 @@ def test_build_token_profile_assembles_all_fields():
     assert profile.top_holder_pct == 30.0             # 300 / 1000
     assert profile.holder_count == 742
     assert profile.created_at == "2023-11-14T22:13:20+00:00"
-    assert profile.lp_secured is False                # conservative default
+    assert profile.lp.status is LpStatus.UNKNOWN       # honest default (not analyzed)
 
 
 def test_build_token_profile_uses_injected_lp_resolver():
-    profile = build_token_profile(_FakeClient(), "mintA", lp_resolver=lambda c, m: True)
-    assert profile.lp_secured is True
+    profile = build_token_profile(
+        _FakeClient(), "mintA", lp_resolver=lambda c, m: LpAssessment(LpStatus.SECURED)
+    )
+    assert profile.lp.status is LpStatus.SECURED
 
 
 class _NoDeployerClient(_FakeClient):
@@ -452,3 +455,63 @@ def test_created_mints_truncates_on_signature_cap():
 
 def test_created_mints_empty_for_unknown_deployer():
     assert created_mints(_HistoryClient([], {}), None) == ([], False)
+
+
+@respx.mock
+def test_get_token_supply_reads_amount():
+    respx.post(HELIUS_URL).mock(
+        return_value=_json({"result": {"value": {"amount": "12345", "decimals": 6}}})
+    )
+    with _client() as client:
+        assert client.get_token_supply("lpMint") == 12345
+
+
+@respx.mock
+def test_get_token_supply_genuine_zero_reads_zero():
+    respx.post(HELIUS_URL).mock(
+        return_value=_json({"result": {"value": {"amount": "0", "decimals": 6}}})
+    )
+    with _client() as client:
+        assert client.get_token_supply("lpMint") == 0  # a real full-burn, not a parse miss
+
+
+@respx.mock
+def test_get_token_supply_none_when_amount_unparseable():
+    # A degraded/unexpected RPC shape (no amount) must NOT read as a real 0 — a 0 would be
+    # mistaken for a full LP burn downstream and could drive a false 'secured' verdict.
+    respx.post(HELIUS_URL).mock(return_value=_json({"result": {"value": {"decimals": 6}}}))
+    with _client() as client:
+        assert client.get_token_supply("lpMint") is None
+
+
+@respx.mock
+def test_get_account_info_returns_value():
+    respx.post(HELIUS_URL).mock(return_value=_json({"result": {"value": {"owner": "ownerProg"}}}))
+    with _client() as client:
+        assert client.get_account_info("acct") == {"owner": "ownerProg"}
+
+
+@respx.mock
+def test_get_account_info_null_account_is_empty_dict():
+    respx.post(HELIUS_URL).mock(return_value=_json({"result": {"value": None}}))
+    with _client() as client:
+        assert client.get_account_info("acct") == {}
+
+
+@respx.mock
+def test_rpc_http_error_does_not_leak_api_key():
+    """A 4xx/5xx must surface as a scrubbed HeliusError — never the api-key-bearing URL."""
+    respx.post(HELIUS_URL).mock(return_value=httpx.Response(429, text="rate limited"))
+    with HeliusClient("test-key", max_retries=0) as client, pytest.raises(HeliusError) as exc:
+        client.get_asset("mintA")
+    assert "test-key" not in str(exc.value)
+    assert "429" in str(exc.value)
+
+
+@respx.mock
+def test_rpc_retries_on_429_then_succeeds():
+    respx.post(HELIUS_URL).mock(
+        side_effect=[httpx.Response(429), _json({"result": {"id": "mintA"}})]
+    )
+    with HeliusClient("test-key", max_retries=2) as client:
+        assert client.get_asset("mintA") == {"id": "mintA"}

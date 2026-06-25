@@ -17,12 +17,13 @@ fee-payer extraction is validated against a real deploy tx once a Helius key is 
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 
 import httpx
 
-from .signals import TokenProfile
+from .signals import LpAssessment, LpStatus, TokenProfile
 
 HELIUS_RPC = "https://mainnet.helius-rpc.com/"
 
@@ -63,9 +64,10 @@ class HeliusError(RuntimeError):
 class HeliusClient:
     """Minimal Helius JSON-RPC client (DAS getAsset + standard token/tx RPC)."""
 
-    def __init__(self, api_key: str, *, timeout: float = 20.0) -> None:
+    def __init__(self, api_key: str, *, timeout: float = 20.0, max_retries: int = 4) -> None:
         self._url = f"{HELIUS_RPC}?api-key={api_key}"
         self._client = httpx.Client(timeout=timeout)
+        self._max_retries = max_retries
 
     def __enter__(self) -> HeliusClient:
         return self
@@ -77,11 +79,24 @@ class HeliusClient:
         self._client.close()
 
     def _rpc(self, method: str, params: dict | list) -> dict | list:
-        resp = self._client.post(
-            self._url,
-            json={"jsonrpc": "2.0", "id": "anamnesis", "method": method, "params": params},
-        )
-        resp.raise_for_status()
+        body = {"jsonrpc": "2.0", "id": "anamnesis", "method": method, "params": params}
+        attempt = 0
+        while True:
+            try:
+                resp = self._client.post(self._url, json=body)
+                resp.raise_for_status()
+                break
+            except httpx.HTTPStatusError as e:
+                # Retry rate-limits (429) with bounded exponential backoff; on give-up NEVER
+                # surface self._url (it carries the api-key) — scrub to the status code only.
+                if e.response.status_code == 429 and attempt < self._max_retries:
+                    time.sleep(min(2.0, 0.25 * 2 ** attempt))
+                    attempt += 1
+                    continue
+                raise HeliusError(f"{method} failed: HTTP {e.response.status_code}") from None
+            except httpx.HTTPError as e:
+                # Transport errors (connect/read/timeout) also reference the api-key URL — scrub.
+                raise HeliusError(f"{method} request failed: {type(e).__name__}") from None
         data = resp.json()
         if data.get("error"):
             raise HeliusError(f"{method} failed: {data['error']}")
@@ -101,6 +116,23 @@ class HeliusClient:
     def get_token_accounts(self, mint: str, *, page: int = 1, limit: int = 1000) -> dict:
         """getTokenAccounts for a mint — holders, paginated; the result carries ``total``."""
         return self._rpc("getTokenAccounts", {"mint": mint, "page": page, "limit": limit})
+
+    def get_account_info(self, address: str, *, encoding: str = "jsonParsed") -> dict:
+        """Account info for an address — returns ``result.value`` ({} when the account is null)."""
+        result = self._rpc("getAccountInfo", [address, {"encoding": encoding}])
+        return (result or {}).get("value") or {}
+
+    def get_token_supply(self, mint: str) -> int | None:
+        """Current total supply of a mint (raw base units), or ``None`` when the RPC response
+        carries no parseable amount. A genuine full burn reads as ``0``; an unreadable/degraded
+        shape must NOT collapse to ``0`` (downstream a 0 means 'fully burned' and could drive a
+        false 'secured' verdict), so it is reported as ``None`` (unknown) instead."""
+        result = self._rpc("getTokenSupply", [mint])
+        amount = ((result or {}).get("value") or {}).get("amount")
+        try:
+            return int(amount)
+        except (TypeError, ValueError):
+            return None
 
     def get_signatures_for_address(
         self, address: str, *, before: str | None = None, limit: int = 1000
@@ -306,23 +338,27 @@ def created_mints(
     return out, True
 
 
-LpResolver = Callable[[HeliusClient, str], bool]
+LpResolver = Callable[[HeliusClient, str], LpAssessment]
 
 
-def _lp_unverified(client: HeliusClient, mint: str) -> bool:
-    """Conservative default: liquidity unverified -> treated as not secured (unsafe)."""
-    return False
+def _lp_unanalyzed(client: HeliusClient, mint: str) -> LpAssessment:
+    """Default: liquidity not analyzed -> honest UNKNOWN (never a false 'not secured').
+
+    The real LpAnalyzer (forensic/lp.py) is injected by the caller (MCP entrypoint); keeping
+    it out of helius.py keeps this module free of the aggregator/lp dependency.
+    """
+    return LpAssessment(LpStatus.UNKNOWN, [])
 
 
 def build_token_profile(
-    client: HeliusClient, mint: str, *, lp_resolver: LpResolver = _lp_unverified
+    client: HeliusClient, mint: str, *, lp_resolver: LpResolver = _lp_unanalyzed
 ) -> TokenProfile:
     """Assemble a ``TokenProfile`` for a mint from grounded Helius reads.
 
     Pulls authorities + supply (getAsset), holder concentration (largest accounts),
     holder count (getTokenAccounts), and deployer + creation time (the creation tx).
-    ``lp_resolver`` decides ``lp_secured``; the default treats unverified liquidity as
-    unsecured, pending first-party LP-burn/lock detection.
+    ``lp_resolver`` decides ``lp``; the default reports UNKNOWN (not analyzed) — the real
+    LpAnalyzer is injected by the MCP entrypoint.
     """
     asset = client.get_asset(mint)
     info = asset.get("token_info") or {}
@@ -335,7 +371,7 @@ def build_token_profile(
         deployer=deployer,
         mint_authority=mint_authority,
         freeze_authority=freeze_authority,
-        lp_secured=lp_resolver(client, mint),
+        lp=lp_resolver(client, mint),
         top_holder_pct=top_holder_pct(largest, supply),
         holder_count=holder_count(client, mint),
         created_at=created_at,

@@ -8,7 +8,7 @@ assembly (A.9), where qwen-agent is installed.
 """
 from anamnesis.agent.prompts import SYSTEM_INSTRUCTION
 from anamnesis.agent.tools import assess_risk_handler, recall_handler, remember_handler
-from anamnesis.forensic.signals import TokenProfile
+from anamnesis.forensic.signals import LpAssessment, LpStatus, TokenProfile
 from anamnesis.memory.graph import ForensicMemory
 from anamnesis.memory.models import Provenance, make_edge
 from anamnesis.memory.repository import InMemoryRepository
@@ -74,7 +74,7 @@ def test_assess_risk_flags_fresh_token_from_remembered_rugger_high():
         now="2026-01-05",
     )
     clean = TokenProfile(mint="tokFresh", deployer="ruggerX", mint_authority=None,
-                         freeze_authority=None, lp_secured=True, top_holder_pct=2.0,
+                         freeze_authority=None, lp=LpAssessment(LpStatus.SECURED), top_holder_pct=2.0,
                          holder_count=300)
     out = assess_risk_handler(mem, lambda mint: clean, "tokFresh")
     assert out["level"] == "high"
@@ -84,10 +84,58 @@ def test_assess_risk_flags_fresh_token_from_remembered_rugger_high():
 def test_assess_risk_unknown_deployer_is_low():
     mem = ForensicMemory(InMemoryRepository())
     clean = TokenProfile(mint="m", deployer="freshWallet", mint_authority=None,
-                         freeze_authority=None, lp_secured=True, top_holder_pct=2.0,
+                         freeze_authority=None, lp=LpAssessment(LpStatus.SECURED), top_holder_pct=2.0,
                          holder_count=300)
     out = assess_risk_handler(mem, lambda mint: clean, "m")
     assert out["level"] == "low"
+
+
+def test_build_lp_aware_profile_wires_analyzer_into_verdict():
+    # The agent's verdict path (assess_risk) must run the REAL on-chain LP analyzer, not the
+    # UNKNOWN default — otherwise a withdrawable-LP rug only ever emits the low LP_UNVERIFIED
+    # signal and the high LP_NOT_SECURED can never reach the verdict (it was wired into the MCP
+    # get_token_profile path only). A withdrawable Raydium pool must surface NOT_SECURED here.
+    import json
+    from pathlib import Path
+
+    from anamnesis.agent.tools import build_lp_aware_profile
+
+    fx = json.loads(
+        (Path(__file__).parent / "fixtures" / "lp_pool_accounts.json").read_text()
+    )["raydium_v4"]
+    ray_v4 = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
+
+    class _Dex:
+        def token_pairs(self, mint):
+            return [{"pairAddress": fx["pool"], "dexId": "raydium", "liquidity": {"usd": 50_000.0}}]
+
+    class _Helius:
+        def get_asset(self, mint):
+            return {"token_info": {"supply": "1000"}, "authorities": []}
+
+        def get_token_largest_accounts(self, mint):
+            return [{"address": "TA", "amount": "1"}]
+
+        def get_token_accounts(self, mint, *, page=1, limit=1000):
+            return {"total": 300}
+
+        def oldest_signature(self, address, *, page_limit=1000):
+            return None  # unresolved deployer -> falls back to (empty) update authority
+
+        def get_account_info(self, addr, *, encoding="jsonParsed"):
+            if addr == fx["pool"]:
+                return {"data": [fx["data_b64"], "base64"]} if encoding == "base64" else {"owner": ray_v4}
+            return {"data": {"parsed": {"info": {"owner": "deployerWallet"}}}}  # withdrawable
+
+        def get_token_supply(self, mint):
+            return 1000
+
+    profile = build_lp_aware_profile(_Helius(), _Dex(), "mintW")
+    assert profile.lp.status is LpStatus.NOT_SECURED  # analyzer ran (not the UNKNOWN default)
+
+    mem = ForensicMemory(InMemoryRepository())
+    out = assess_risk_handler(mem, lambda m: profile, "mintW")
+    assert "LP_NOT_SECURED" in {s["code"] for s in out["signals"]}  # high LP signal reaches verdict
 
 
 def test_system_instruction_is_memory_first():
