@@ -353,3 +353,14 @@ def test_classify_funder_categorizes_known_and_unknown(monkeypatch):
     assert classify_funder("mixerAddr") == "mixer"
     assert classify_funder("randomAddr") == "unknown"
     assert classify_funder(None) == "unknown"
+
+
+def test_funding_sources_seed_entries_are_well_formed():
+    # Each curated entry must be a non-empty address mapped to a valid category and classified
+    # accordingly — guards against a typo'd category or address slipping into the forensic set.
+    from anamnesis.forensic.helius import FUNDING_SOURCES
+
+    for address, category in FUNDING_SOURCES.items():
+        assert isinstance(address, str) and address
+        assert category in {"cex", "bridge", "mixer"}
+        assert classify_funder(address) == category

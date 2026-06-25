@@ -41,7 +41,10 @@ LAUNCHPAD_AUTHORITIES = frozenset({
 # cannot attribute is omitted, so an unlabelled funder honestly classifies as "unknown" rather
 # than guessed. Extend by appending entries.
 FUNDING_SOURCES: dict[str, str] = {
-    # "<verified-address>": "cex" | "bridge" | "mixer",  # <entity> — <source/citation>
+    # CEX hot wallets — a deployer funded by a CEX withdrawal has that hot wallet as the fee
+    # payer of its seeding tx. Verified against public Solana label sources; extend by appending.
+    "is6MTRHEgyFLNTfYcuV4QBWLjrZBfmhVNYR6ccgr8KV": "cex",  # OKX: Hot Wallet — Solscan label
+    "GJRs4FwHtemZ5ZE9x3FNvJ8TMwitKTh21yxdRPqn7npE": "cex",  # Coinbase Hot Wallet 2 — Solscan/Arkham
 }
 
 
