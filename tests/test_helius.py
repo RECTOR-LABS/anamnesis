@@ -452,3 +452,26 @@ def test_created_mints_truncates_on_signature_cap():
 
 def test_created_mints_empty_for_unknown_deployer():
     assert created_mints(_HistoryClient([], {}), None) == ([], False)
+
+
+@respx.mock
+def test_get_token_supply_reads_amount():
+    respx.post(HELIUS_URL).mock(
+        return_value=_json({"result": {"value": {"amount": "12345", "decimals": 6}}})
+    )
+    with _client() as client:
+        assert client.get_token_supply("lpMint") == 12345
+
+
+@respx.mock
+def test_get_account_info_returns_value():
+    respx.post(HELIUS_URL).mock(return_value=_json({"result": {"value": {"owner": "ownerProg"}}}))
+    with _client() as client:
+        assert client.get_account_info("acct") == {"owner": "ownerProg"}
+
+
+@respx.mock
+def test_get_account_info_null_account_is_empty_dict():
+    respx.post(HELIUS_URL).mock(return_value=_json({"result": {"value": None}}))
+    with _client() as client:
+        assert client.get_account_info("acct") == {}

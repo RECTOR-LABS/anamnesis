@@ -27,6 +27,17 @@ LP_LOCKERS: dict[str, str] = {
 SECURED_FRACTION_THRESHOLD = 0.95  # >= this fraction of current LP supply burned+locked => pool secured
 DUST_LIQUIDITY_USD = 1_000.0       # pools below this are recorded but never drive the verdict (decoy guard)
 
+# Owning-program -> venue label. Routing by on-chain owner is the grounded alternative to the
+# aggregator's ambiguous dexId (V4/CPMM/CLMM all read dexId == "raydium").
+PROGRAM_TO_VENUE: dict[str, str] = {
+    "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8": "raydium_v4",
+    "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C": "raydium_cpmm",
+    "Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB": "meteora_damm_v1",
+    "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA": "pumpswap",
+    "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P": "pumpfun_curve",
+}
+FUNGIBLE_LP_VENUES = frozenset({"raydium_v4", "raydium_cpmm", "meteora_damm_v1", "pumpswap"})
+
 
 def secured_fraction(holders: list[dict], supply: int) -> float:
     """Fraction of *current* LP supply that is immobilized (incinerator-held or locker-held).
@@ -60,3 +71,25 @@ def aggregate(evidence: list[LpEvidence], *, dust_usd: float = DUST_LIQUIDITY_US
     if not nondust or any(e.secured is None for e in nondust):
         return LpStatus.UNKNOWN
     return LpStatus.SECURED
+
+
+def venue_of(helius, pool: str) -> str:
+    """Classify a pool by its owning program (on-chain), else 'unknown'."""
+    owner = helius.get_account_info(pool).get("owner")
+    return PROGRAM_TO_VENUE.get(owner, "unknown")
+
+
+def token_account_owner(helius, token_account: str) -> str | None:
+    """The wallet/program that owns an SPL token account (jsonParsed ``info.owner``)."""
+    info = helius.get_account_info(token_account)
+    data = info.get("data")
+    parsed = (data.get("parsed") or {}) if isinstance(data, dict) else {}
+    return (parsed.get("info") or {}).get("owner")
+
+
+def largest_holders_with_owners(helius, lp_mint: str) -> list[dict]:
+    """Top LP-token holders annotated with their resolved owner (for secured_fraction)."""
+    out: list[dict] = []
+    for acc in helius.get_token_largest_accounts(lp_mint):
+        out.append({"owner": token_account_owner(helius, acc.get("address")), "amount": acc.get("amount")})
+    return out

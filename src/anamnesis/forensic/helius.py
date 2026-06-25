@@ -102,6 +102,16 @@ class HeliusClient:
         """getTokenAccounts for a mint — holders, paginated; the result carries ``total``."""
         return self._rpc("getTokenAccounts", {"mint": mint, "page": page, "limit": limit})
 
+    def get_account_info(self, address: str, *, encoding: str = "jsonParsed") -> dict:
+        """Account info for an address — returns ``result.value`` ({} when the account is null)."""
+        result = self._rpc("getAccountInfo", [address, {"encoding": encoding}])
+        return (result or {}).get("value") or {}
+
+    def get_token_supply(self, mint: str) -> int:
+        """Current total supply of a mint (raw base units)."""
+        result = self._rpc("getTokenSupply", [mint])
+        return int(((result or {}).get("value") or {}).get("amount") or 0)
+
     def get_signatures_for_address(
         self, address: str, *, before: str | None = None, limit: int = 1000
     ) -> list[dict]:

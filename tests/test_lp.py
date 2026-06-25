@@ -1,4 +1,11 @@
-from anamnesis.forensic.lp import INCINERATOR, LP_LOCKERS, aggregate, secured_fraction
+from anamnesis.forensic.lp import (
+    INCINERATOR,
+    LP_LOCKERS,
+    aggregate,
+    largest_holders_with_owners,
+    secured_fraction,
+    venue_of,
+)
 from anamnesis.forensic.signals import LpEvidence, LpStatus
 
 _LOCKER = next(iter(LP_LOCKERS))  # a curated locker program id
@@ -50,3 +57,38 @@ def test_aggregate_unknown_when_nondust_has_none():
 
 def test_aggregate_secured_when_all_nondust_secured():
     assert aggregate([_ev(True, 50_000), _ev(True, 30_000)]) is LpStatus.SECURED
+
+
+class _AcctClient:
+    """Fake Helius exposing get_account_info / get_token_largest_accounts (addr -> value dict)."""
+
+    def __init__(self, accounts, largest=None):
+        self._accounts = accounts
+        self._largest = largest or []
+
+    def get_account_info(self, addr, *, encoding="jsonParsed"):
+        return self._accounts.get(addr, {})
+
+    def get_token_largest_accounts(self, mint):
+        return self._largest
+
+
+def test_venue_of_routes_by_owning_program():
+    ray_v4 = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
+    assert venue_of(_AcctClient({"POOL": {"owner": ray_v4}}), "POOL") == "raydium_v4"
+
+
+def test_venue_of_unknown_program_is_unknown():
+    assert venue_of(_AcctClient({"POOL": {"owner": "SomeOtherProgram"}}), "POOL") == "unknown"
+
+
+def test_largest_holders_with_owners_resolves_each_owner():
+    c = _AcctClient(
+        accounts={
+            "TA1": {"data": {"parsed": {"info": {"owner": "incin"}}}},
+            "TA2": {"data": {"parsed": {"info": {"owner": "deployer"}}}},
+        },
+        largest=[{"address": "TA1", "amount": "600"}, {"address": "TA2", "amount": "400"}],
+    )
+    holders = largest_holders_with_owners(c, "lpMint")
+    assert holders == [{"owner": "incin", "amount": "600"}, {"owner": "deployer", "amount": "400"}]
