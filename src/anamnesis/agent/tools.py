@@ -13,6 +13,9 @@ import json
 from collections.abc import Callable
 
 from ..assess import assess_risk
+from ..forensic.helius import build_token_profile
+from ..forensic.lp import LpAnalyzer
+from ..forensic.pools import DexScreenerClient
 from ..forensic.signals import TokenProfile
 from ..memory.graph import ForensicMemory
 from ..memory.models import Edge, Provenance, make_edge
@@ -118,6 +121,17 @@ def assess_risk_handler(
     return _verdict_to_dict(verdict)
 
 
+def build_lp_aware_profile(helius, dex, mint: str) -> TokenProfile:
+    """Build a token profile with the real on-chain LP analyzer wired in.
+
+    The agent's risk VERDICT (assess_risk) must reflect LP securedness, so the analyzer is
+    injected here exactly as the MCP get_token_profile entrypoint does. Without it the verdict
+    would always see LP as UNKNOWN and the high LP_NOT_SECURED signal could never fire (design:
+    "the real LpAnalyzer is injected by the caller (agent assembly / MCP)").
+    """
+    return build_token_profile(helius, mint, lp_resolver=LpAnalyzer(dex).assess)
+
+
 # --- Qwen-Agent adapters (defined only when qwen-agent is installed) ------------------
 # The pure handlers above never need qwen-agent; importing it lazily keeps this module
 # usable in plain test/CI environments. The wrappers below are exercised at agent
@@ -131,11 +145,12 @@ if register_tool is not None:  # pragma: no cover - requires qwen-agent + live s
     from datetime import datetime, timezone
 
     from .. import config
-    from ..forensic.helius import HeliusClient, build_token_profile
+    from ..forensic.helius import HeliusClient
     from ..memory.mongo_store import MongoRepository
 
     _memory_singleton: ForensicMemory | None = None
     _helius_singleton: HeliusClient | None = None
+    _dex_singleton: DexScreenerClient | None = None
 
     def _memory() -> ForensicMemory:
         global _memory_singleton
@@ -151,6 +166,12 @@ if register_tool is not None:  # pragma: no cover - requires qwen-agent + live s
         if _helius_singleton is None:
             _helius_singleton = HeliusClient(config.require("ANAMNESIS_HELIUS_API_KEY"))
         return _helius_singleton
+
+    def _dex() -> DexScreenerClient:
+        global _dex_singleton
+        if _dex_singleton is None:
+            _dex_singleton = DexScreenerClient()
+        return _dex_singleton
 
     def _now() -> str:
         return datetime.now(timezone.utc).isoformat()
@@ -211,7 +232,7 @@ if register_tool is not None:  # pragma: no cover - requires qwen-agent + live s
             return json.dumps(
                 assess_risk_handler(
                     _memory(),
-                    lambda m: build_token_profile(_helius(), m),
+                    lambda m: build_lp_aware_profile(_helius(), _dex(), m),
                     a["mint"],
                     as_of=a.get("as_of"),
                 )
