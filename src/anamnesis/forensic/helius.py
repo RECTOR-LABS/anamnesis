@@ -12,7 +12,7 @@ and it is empty for pump.fun mints. ``resolve_origin`` instead takes the fee-pay
 the mint's creation (oldest) transaction — the wallet that paid to deploy, which holds
 even when the rugger renounces every authority — and falls back to the update authority
 when that tx is unresolvable. It returns the creation timestamp from the same tx. The
-fee-payer extraction is validated against a real deploy tx once a Helius key is available.
+fee-payer extraction has been validated against real mainnet deploy txs.
 """
 
 from __future__ import annotations
@@ -31,8 +31,8 @@ HELIUS_RPC = "https://mainnet.helius-rpc.com/"
 # authority for thousands of mints at once, so falling back to it as a "deployer" would
 # collapse every launchpad token onto one PDA — the exact false clustering the fee-payer
 # design avoids on the happy path. A fallback that resolves to one of these is treated as
-# "deployer unknown" instead. Seeded with well-known public program addresses; extended and
-# validated against live Helius data once the API key (access gate #3) lands.
+# "deployer unknown" instead. Seeded with the pump.fun program; extend with other launchpad
+# shared authorities as they are identified and validated against live Helius data.
 LAUNCHPAD_AUTHORITIES = frozenset({
     "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",  # pump.fun program
 })
