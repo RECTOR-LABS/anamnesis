@@ -20,6 +20,7 @@ from .helius import (
     HeliusError,
     build_token_profile,
     classify_funder,
+    created_mints,
     funder_of,
     holder_count,
     resolve_origin,
@@ -104,4 +105,19 @@ def trace_funding_dict(client: HeliusClient, mint: str) -> dict:
         "funder": funder,
         "source_type": classify_funder(funder),
         "funded_at": funded_at,
+    }
+
+
+@_forensic_read
+def deployer_token_history_dict(client: HeliusClient, mint: str) -> dict:
+    """Other token mints the deployer has created (a live serial-deployer scan), with a
+    ``truncated`` flag when the bounded scan stopped on a cap."""
+    deployer, _ = resolve_origin(client, mint)
+    mints, truncated = created_mints(client, deployer)
+    return {
+        "mint": mint,
+        "deployer": deployer,
+        "created_mints": mints,
+        "count": len(mints),
+        "truncated": truncated,
     }
