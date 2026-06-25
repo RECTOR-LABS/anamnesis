@@ -92,7 +92,7 @@ from qwen_agent.agents import Assistant
 llm_cfg = {
     "model": "qwen-max",
     "model_server": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-    "api_key": os.environ["DASHSCOPE_API_KEY"],
+    "api_key": os.environ["ANAMNESIS_DASHSCOPE_API_KEY"],
     "model_type": "oai",
     "generate_cfg": {"top_p": 0.8},
 }
@@ -103,7 +103,7 @@ tools = [
         "solana_forensics": {
             "command": "python",   # the project venv interpreter (sys.executable in code)
             "args": ["mcp/solana_forensics_mcp.py"],
-            # HELIUS_API_KEY flows through the child process env, never argv.
+            # ANAMNESIS_HELIUS_API_KEY flows through the child process env, never argv.
         }
     }},
     "recall", "remember", "assess_risk",            # native @register_tool tools
@@ -143,7 +143,7 @@ Verified-capable; exact endpoints confirmed Day 1:
 - **Funding trace:** Helius Enhanced Transactions (parsed history) → where the deployer's SOL came from (CEX / bridge / mixer / known-bad cluster).
 - **LP status:** pool account + LP-token burn/lock checks.
 
-Fallback if the MCP seam fights us Day 1: call Helius directly as Qwen-Agent function tools (lose the MCP innovation flourish, keep the agent). `HELIUS_API_KEY` via env only, never argv/committed.
+Fallback if the MCP seam fights us Day 1: call Helius directly as Qwen-Agent function tools (lose the MCP innovation flourish, keep the agent). `ANAMNESIS_HELIUS_API_KEY` via env only, never argv/committed.
 
 ### Poisoning defense (AI-safety story, banks Innovation points)
 On-chain memory is adversarial — attackers can seed misleading breadcrumbs (e.g., dust transfers to fabricate a `SAME_CLUSTER` link). Defense: every edge's `provenance.confidence` plus a **corroboration count**; `assess_risk` uses **trust-weighted aggregation**, so first-party facts we derived from RPC/DAS dominate and uncorroborated "claims" an adversary could plant carry near-zero weight and cannot flip a verdict. Directly answers the documented 2026 memory-poisoning attack class.

@@ -1,6 +1,6 @@
 """Solana Forensics MCP server (A.8) — a thin FastMCP stdio wrapper over the tested forensic
 core. Spawned by the Qwen-Agent Assistant as a child process; exposes three grounded Solana
-reads as MCP tools. HELIUS_API_KEY is read from the inherited process env (never argv).
+reads as MCP tools. ANAMNESIS_HELIUS_API_KEY is read from the inherited process env (never argv).
 
 Run standalone (stdio):  python mcp/solana_forensics_mcp.py
 """
@@ -23,7 +23,7 @@ def _helius() -> HeliusClient:
     """Lazily build one HeliusClient from env, reused across tool calls in this process."""
     global _client
     if _client is None:
-        _client = HeliusClient(config.require("HELIUS_API_KEY"))
+        _client = HeliusClient(config.require("ANAMNESIS_HELIUS_API_KEY"))
     return _client
 
 

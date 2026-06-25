@@ -35,6 +35,6 @@ def helius_rpc_url() -> str:
     """Helius Solana mainnet RPC URL, keyed from the environment.
 
     The API key travels in the query string per Helius's design; it is read from
-    HELIUS_API_KEY and must never be logged.
+    ANAMNESIS_HELIUS_API_KEY and must never be logged.
     """
-    return f"https://mainnet.helius-rpc.com/?api-key={require('HELIUS_API_KEY')}"
+    return f"https://mainnet.helius-rpc.com/?api-key={require('ANAMNESIS_HELIUS_API_KEY')}"

@@ -21,5 +21,5 @@ def test_require_treats_empty_string_as_missing(monkeypatch):
 
 
 def test_helius_rpc_url_embeds_key_from_env(monkeypatch):
-    monkeypatch.setenv("HELIUS_API_KEY", "test-key-123")
+    monkeypatch.setenv("ANAMNESIS_HELIUS_API_KEY", "test-key-123")
     assert helius_rpc_url() == "https://mainnet.helius-rpc.com/?api-key=test-key-123"

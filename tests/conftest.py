@@ -5,7 +5,7 @@ fixture lets the A.2/A.3 repository + memory tests run unchanged against either
 backend, proving the in-memory fake and the Mongo store agree on the same bodies:
 
     pytest                  # in-memory fake (default; no DB)
-    pytest --store=mongo    # MongoRepository — mongomock when MONGODB_URI is unset
+    pytest --store=mongo    # MongoRepository — mongomock when ANAMNESIS_MONGODB_URI is unset
                             # (access-independent CI), real ApsaraDB when it is set
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ from anamnesis.memory.repository import InMemoryRepository
 
 # A dedicated, disposable database for the contract tests — deliberately NOT the
 # configured production db (config.ANAMNESIS_DB), so running the contract against a
-# live MONGODB_URI can never drop real forensic memory.
+# live ANAMNESIS_MONGODB_URI can never drop real forensic memory.
 CONTRACT_DB = "anamnesis_contract_test"
 
 
@@ -40,7 +40,7 @@ def repo(request: pytest.FixtureRequest):
         yield InMemoryRepository()
         return
 
-    # Mongo backend: real ApsaraDB when MONGODB_URI is set, else mongomock so the
+    # Mongo backend: real ApsaraDB when ANAMNESIS_MONGODB_URI is set, else mongomock so the
     # contract still runs (and verifies the query translation) without a server.
     from anamnesis.memory.mongo_store import MongoRepository
 
@@ -52,7 +52,7 @@ def repo(request: pytest.FixtureRequest):
             "(config.ANAMNESIS_DB); refusing to run to avoid dropping real memory"
         )
 
-    if uri := os.environ.get("MONGODB_URI"):
+    if uri := os.environ.get("ANAMNESIS_MONGODB_URI"):
         from pymongo import MongoClient
 
         client = MongoClient(uri, serverSelectionTimeoutMS=10000)
