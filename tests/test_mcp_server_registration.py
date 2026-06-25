@@ -1,7 +1,7 @@
 """Registration + startup smoke for the A.8 FastMCP entrypoint.
 
 Loads mcp/solana_forensics_mcp.py (which lives outside the importable src/ tree because it is
-spawned as a standalone stdio script) and asserts (a) the three forensic tools register on the
+spawned as a standalone stdio script) and asserts (a) the five forensic tools register on the
 FastMCP server, and (b) main() fails fast on a missing Helius key and closes the HTTP client on
 shutdown. Requires the mcp package — skipped in CI, which installs a pinned subset without it
 (mirrors test_agent_tool_registration.py's qwen_agent guard).
@@ -31,11 +31,12 @@ def _load_server():
     return _load_module().server
 
 
-def test_three_forensic_tools_register():
+def test_all_forensic_tools_register():
     server = _load_server()
     # Assert via the public async list_tools() (Tool objects), not the private _tool_manager.
     names = {t.name for t in asyncio.run(server.list_tools())}
-    assert names == {"get_token_profile", "get_deployer", "get_holders"}
+    assert names == {"get_token_profile", "get_deployer", "get_holders",
+                     "trace_funding", "get_deployer_token_history"}
 
 
 def test_main_fails_fast_when_helius_key_missing(monkeypatch):
