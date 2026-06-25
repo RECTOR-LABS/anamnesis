@@ -10,8 +10,11 @@ from __future__ import annotations
 
 import base64
 
-from .pools import PoolRef
-from .signals import LpEvidence, LpStatus
+import httpx
+
+from .helius import HeliusError
+from .pools import AggregatorError, PoolRef, discover_pools
+from .signals import LpAssessment, LpEvidence, LpStatus
 
 _B58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
@@ -151,3 +154,43 @@ def verify_fungible(helius, pool: PoolRef, venue: str, lp_mint_offset: int) -> L
               f"{frac:.0%} of supply burned/locked via {method}{note}.")
     return LpEvidence(venue, pool.pool, lp_mint, method, secured, detail, pool.liquidity_usd,
                       citation=lp_mint)
+
+
+# Venues whose lp_mint offset is pinned (and thus on-chain-verifiable). Extended per venue.
+_VENUE_OFFSETS = {
+    "raydium_v4": RAYDIUM_V4_LP_MINT_OFFSET,
+    "raydium_cpmm": RAYDIUM_CPMM_LP_MINT_OFFSET,
+}
+# A per-pool read may hit an RPC error or an unexpected on-chain shape; degrade that pool to
+# 'unknown' rather than crash the whole assessment (the verdict stays honest, never false-secure).
+_VERIFY_DEGRADE_ON = (
+    HeliusError, httpx.HTTPError, ValueError, TypeError, KeyError, AttributeError, IndexError,
+)
+
+
+class LpAnalyzer:
+    """Discover a mint's pools and prove per-pool securedness on-chain into an LpAssessment."""
+
+    def __init__(self, dex) -> None:
+        self._dex = dex
+
+    def assess(self, helius, mint: str) -> LpAssessment:
+        try:
+            pools = discover_pools(self._dex, mint)
+        except AggregatorError as e:
+            return LpAssessment(LpStatus.UNKNOWN, [LpEvidence(
+                "unknown", "", None, "discovery_failed", None, f"pool discovery failed: {e}")])
+        evidence = [self._verify(helius, p) for p in pools]
+        return LpAssessment(aggregate(evidence), evidence)
+
+    def _verify(self, helius, pool: PoolRef) -> LpEvidence:
+        try:
+            venue = venue_of(helius, pool.pool)
+            if venue in _VENUE_OFFSETS:
+                return verify_fungible(helius, pool, venue, _VENUE_OFFSETS[venue])
+            return LpEvidence(venue, pool.pool, None, "position_nft_unverified", None,
+                              "venue not yet on-chain-verifiable (position-NFT or Phase-2 venue).",
+                              pool.liquidity_usd)
+        except _VERIFY_DEGRADE_ON as e:
+            return LpEvidence("unknown", pool.pool, None, "verify_failed", None,
+                              f"pool verification failed: {e}", pool.liquidity_usd)

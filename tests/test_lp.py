@@ -7,6 +7,7 @@ from anamnesis.forensic.lp import (
     LP_LOCKERS,
     RAYDIUM_CPMM_LP_MINT_OFFSET,
     RAYDIUM_V4_LP_MINT_OFFSET,
+    LpAnalyzer,
     _b58encode,
     _pubkey_at,
     aggregate,
@@ -15,7 +16,7 @@ from anamnesis.forensic.lp import (
     venue_of,
     verify_fungible,
 )
-from anamnesis.forensic.pools import PoolRef
+from anamnesis.forensic.pools import AggregatorError, PoolRef
 from anamnesis.forensic.signals import LpEvidence, LpStatus
 
 _FX = json.loads((Path(__file__).parent / "fixtures" / "lp_pool_accounts.json").read_text())
@@ -197,3 +198,54 @@ def test_verify_fungible_locker_held_is_secured_locked():
     ev = verify_fungible(_C(), PoolRef(fx["pool"], "raydium", 50_000.0),
                          "raydium_v4", RAYDIUM_V4_LP_MINT_OFFSET)
     assert ev.secured is True and ev.method.startswith("lp_locked:")
+
+
+def test_analyzer_routes_raydium_and_aggregates_secured():
+    fx = _FX["raydium_v4"]
+    ray_v4 = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"
+
+    class _Dex:
+        def token_pairs(self, mint):
+            return [{"pairAddress": fx["pool"], "dexId": "raydium", "liquidity": {"usd": 50_000.0}}]
+
+    class _Helius:
+        def get_account_info(self, addr, *, encoding="jsonParsed"):
+            if addr == fx["pool"]:
+                return {"data": [fx["data_b64"], "base64"]} if encoding == "base64" else {"owner": ray_v4}
+            return {"data": {"parsed": {"info": {"owner": INCINERATOR}}}}
+
+        def get_token_supply(self, mint):
+            return 1000
+
+        def get_token_largest_accounts(self, mint):
+            return [{"address": "TA", "amount": "1000"}]
+
+    out = LpAnalyzer(_Dex()).assess(_Helius(), "mintA")
+    assert out.status is LpStatus.SECURED
+    assert out.evidence and out.evidence[0].venue == "raydium_v4"
+
+
+def test_analyzer_unpinned_venue_is_unknown():
+    clmm = "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK"
+
+    class _Dex:
+        def token_pairs(self, mint):
+            return [{"pairAddress": "CLMMP", "dexId": "raydium", "liquidity": {"usd": 50_000.0}}]
+
+    class _Helius:
+        def get_account_info(self, addr, *, encoding="jsonParsed"):
+            return {"owner": clmm}
+
+    out = LpAnalyzer(_Dex()).assess(_Helius(), "mintA")
+    assert out.status is LpStatus.UNKNOWN
+    assert out.evidence[0].method == "position_nft_unverified"
+
+
+def test_analyzer_discovery_failure_is_unknown():
+    class _Dex:
+        def token_pairs(self, mint):
+            raise AggregatorError("down")
+
+    out = LpAnalyzer(_Dex()).assess(object(), "mintA")
+    assert out.status is LpStatus.UNKNOWN
+    assert out.evidence[0].method == "discovery_failed"
