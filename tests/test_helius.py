@@ -7,6 +7,8 @@ from anamnesis.forensic.helius import (
     HeliusError,
     build_token_profile,
     classify_funder,
+    created_mint_in_tx,
+    created_mints,
     creation_time,
     fee_payer,
     funder_of,
@@ -392,3 +394,61 @@ def test_funder_of_none_when_self_paid_or_unresolved():
     assert funder_of(_FunderClient("sig", "deployerW"), "deployerW") == (None, None)
     assert funder_of(_FunderClient(None, "x"), "deployerW") == (None, None)
     assert funder_of(_FunderClient("sig", "x"), None) == (None, None)
+
+
+# --- A.8b: deployer mint-creation history -------------------------------------------------
+
+
+def test_created_mint_in_tx_detects_top_level_and_inner():
+    top = {"transaction": {"message": {"instructions": [
+        {"parsed": {"type": "initializeMint", "info": {"mint": "mintTop"}}}]}}}
+    assert created_mint_in_tx(top) == "mintTop"
+    inner = {"transaction": {"message": {"instructions": []}},
+             "meta": {"innerInstructions": [{"instructions": [
+                 {"parsed": {"type": "initializeMint2", "info": {"mint": "mintInner"}}}]}]}}
+    assert created_mint_in_tx(inner) == "mintInner"
+
+
+def test_created_mint_in_tx_none_when_no_mint_init():
+    tx = {"transaction": {"message": {"instructions": [
+        {"parsed": {"type": "transfer", "info": {"lamports": 1}}}]}}}
+    assert created_mint_in_tx(tx) is None
+    assert created_mint_in_tx({}) is None
+
+
+class _HistoryClient:
+    def __init__(self, sigs, creating):
+        self._sigs, self._creating = sigs, creating
+
+    def get_signatures_for_address(self, address, *, before=None, limit=1000):
+        return [] if before else [{"signature": s} for s in self._sigs]
+
+    def get_transaction(self, signature):
+        mint = self._creating.get(signature)
+        ix = [{"parsed": {"type": "initializeMint", "info": {"mint": mint}}}] if mint else []
+        return {"blockTime": 1700000000, "transaction": {"message": {"instructions": ix}}}
+
+
+def test_created_mints_collects_creations_only():
+    client = _HistoryClient(["s1", "s2", "s3"], {"s1": "mintA", "s3": "mintC"})
+    mints, truncated = created_mints(client, "deployerW")
+    assert [m["mint"] for m in mints] == ["mintA", "mintC"]
+    assert truncated is False
+
+
+def test_created_mints_truncates_on_result_cap():
+    client = _HistoryClient(["s1", "s2", "s3"], {"s1": "m1", "s2": "m2", "s3": "m3"})
+    mints, truncated = created_mints(client, "deployerW", max_results=2)
+    assert [m["mint"] for m in mints] == ["m1", "m2"]
+    assert truncated is True
+
+
+def test_created_mints_truncates_on_signature_cap():
+    client = _HistoryClient(["s1", "s2", "s3"], {"s3": "m3"})
+    mints, truncated = created_mints(client, "deployerW", max_sigs=2)
+    assert mints == []
+    assert truncated is True
+
+
+def test_created_mints_empty_for_unknown_deployer():
+    assert created_mints(_HistoryClient([], {}), None) == ([], False)

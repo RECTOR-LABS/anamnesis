@@ -235,6 +235,77 @@ def funder_of(client: HeliusClient, deployer: str | None) -> tuple[str | None, s
     return payer, creation_time(tx)
 
 
+_MINT_INIT_TYPES = frozenset({"initializeMint", "initializeMint2"})
+
+
+def _all_instructions(tx: dict) -> list[dict]:
+    """Every parsed instruction in a jsonParsed tx — top-level plus inner (CPI) instructions."""
+    message = ((tx or {}).get("transaction") or {}).get("message") or {}
+    top = message.get("instructions") or []
+    inner = [
+        ix
+        for group in (((tx or {}).get("meta") or {}).get("innerInstructions") or [])
+        for ix in (group.get("instructions") or [])
+    ]
+    return [*top, *inner]
+
+
+def created_mint_in_tx(tx: dict) -> str | None:
+    """The mint address initialized in ``tx`` (top-level or inner CPI), else ``None``.
+
+    Detects SPL Token and Token-2022 ``initializeMint``/``initializeMint2`` via the jsonParsed
+    instruction ``type`` (the RPC emits it for both token programs), reading ``info.mint``.
+    """
+    for ix in _all_instructions(tx):
+        parsed = ix.get("parsed") if isinstance(ix, dict) else None
+        if isinstance(parsed, dict) and parsed.get("type") in _MINT_INIT_TYPES:
+            mint = (parsed.get("info") or {}).get("mint")
+            if mint:
+                return mint
+    return None
+
+
+def created_mints(
+    client: HeliusClient, deployer: str | None, *, max_sigs: int = 1000, max_results: int = 50
+) -> tuple[list[dict], bool]:
+    """Scan the deployer's signatures (newest first) for mint-creation txs.
+
+    Returns ``([{"mint", "created_at"}, ...], truncated)``: the mints this wallet initialized,
+    capped at ``max_results`` results and ``max_sigs`` signatures scanned. ``truncated`` is True
+    only when the scan stopped on a cap (more history may exist), so a partial answer is never
+    mistaken for a complete one. Bounded to avoid the unbounded pagination that hangs
+    ``resolve_origin`` on high-activity wallets.
+    """
+    if not deployer:
+        return [], False
+    out: list[dict] = []
+    before: str | None = None
+    scanned = 0
+    while scanned < max_sigs:
+        page = client.get_signatures_for_address(deployer, before=before, limit=1000)
+        if not page:
+            return out, False  # exhausted the deployer's history
+        for entry in page:
+            if scanned >= max_sigs:
+                return out, True  # signature budget spent; more history may exist
+            scanned += 1
+            sig = entry.get("signature")
+            if not sig:
+                continue
+            tx = client.get_transaction(sig)
+            mint = created_mint_in_tx(tx)
+            if mint:
+                out.append({"mint": mint, "created_at": creation_time(tx)})
+                if len(out) >= max_results:
+                    return out, True  # result budget spent
+        if len(page) < 1000:
+            return out, False  # short final page — history exhausted
+        before = page[-1].get("signature")
+        if not before:
+            return out, False
+    return out, True
+
+
 LpResolver = Callable[[HeliusClient, str], bool]
 
 
