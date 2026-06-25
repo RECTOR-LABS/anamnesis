@@ -7,6 +7,7 @@ without it (mirrors test_agent_tool_registration.py's qwen_agent guard).
 """
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import pathlib
 
@@ -26,5 +27,6 @@ def _load_server():
 
 def test_three_forensic_tools_register():
     server = _load_server()
-    names = {t.name for t in server._tool_manager.list_tools()}
+    # Assert via the public async list_tools() (Tool objects), not the private _tool_manager.
+    names = {t.name for t in asyncio.run(server.list_tools())}
     assert names == {"get_token_profile", "get_deployer", "get_holders"}
