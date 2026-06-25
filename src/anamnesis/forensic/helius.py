@@ -77,11 +77,18 @@ class HeliusClient:
         self._client.close()
 
     def _rpc(self, method: str, params: dict | list) -> dict | list:
-        resp = self._client.post(
-            self._url,
-            json={"jsonrpc": "2.0", "id": "anamnesis", "method": method, "params": params},
-        )
-        resp.raise_for_status()
+        try:
+            resp = self._client.post(
+                self._url,
+                json={"jsonrpc": "2.0", "id": "anamnesis", "method": method, "params": params},
+            )
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            # NEVER surface self._url — it carries the api-key. Scrub to the status code only.
+            raise HeliusError(f"{method} failed: HTTP {e.response.status_code}") from None
+        except httpx.HTTPError as e:
+            # Transport errors (connect/read/timeout) also reference the api-key URL — scrub.
+            raise HeliusError(f"{method} request failed: {type(e).__name__}") from None
         data = resp.json()
         if data.get("error"):
             raise HeliusError(f"{method} failed: {data['error']}")
