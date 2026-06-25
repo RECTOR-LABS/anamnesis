@@ -122,10 +122,17 @@ class HeliusClient:
         result = self._rpc("getAccountInfo", [address, {"encoding": encoding}])
         return (result or {}).get("value") or {}
 
-    def get_token_supply(self, mint: str) -> int:
-        """Current total supply of a mint (raw base units)."""
+    def get_token_supply(self, mint: str) -> int | None:
+        """Current total supply of a mint (raw base units), or ``None`` when the RPC response
+        carries no parseable amount. A genuine full burn reads as ``0``; an unreadable/degraded
+        shape must NOT collapse to ``0`` (downstream a 0 means 'fully burned' and could drive a
+        false 'secured' verdict), so it is reported as ``None`` (unknown) instead."""
         result = self._rpc("getTokenSupply", [mint])
-        return int(((result or {}).get("value") or {}).get("amount") or 0)
+        amount = ((result or {}).get("value") or {}).get("amount")
+        try:
+            return int(amount)
+        except (TypeError, ValueError):
+            return None
 
     def get_signatures_for_address(
         self, address: str, *, before: str | None = None, limit: int = 1000

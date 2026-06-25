@@ -155,6 +155,11 @@ def verify_fungible(helius, pool: PoolRef, venue: str, lp_mint_offset: int) -> L
                           "pool account had no decodable data", pool.liquidity_usd)
     lp_mint = _pubkey_at(data_b64, lp_mint_offset)
     supply = helius.get_token_supply(lp_mint)
+    if supply is None:
+        # Supply unreadable (degraded/unexpected RPC shape) — degrade to unknown rather than
+        # let a parse-miss masquerade as a zero-supply full burn (which would read 'secured').
+        return LpEvidence(venue, pool.pool, lp_mint, "verify_failed", None,
+                          "LP mint supply unreadable (degraded RPC response)", pool.liquidity_usd)
     if supply == 0:
         # Zero circulating LP == a full SPL burn: with real reserves the liquidity is locked
         # forever (no LP left to redeem). With no reserves it is a defunct/never-seeded pool.

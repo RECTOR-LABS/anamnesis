@@ -467,6 +467,24 @@ def test_get_token_supply_reads_amount():
 
 
 @respx.mock
+def test_get_token_supply_genuine_zero_reads_zero():
+    respx.post(HELIUS_URL).mock(
+        return_value=_json({"result": {"value": {"amount": "0", "decimals": 6}}})
+    )
+    with _client() as client:
+        assert client.get_token_supply("lpMint") == 0  # a real full-burn, not a parse miss
+
+
+@respx.mock
+def test_get_token_supply_none_when_amount_unparseable():
+    # A degraded/unexpected RPC shape (no amount) must NOT read as a real 0 — a 0 would be
+    # mistaken for a full LP burn downstream and could drive a false 'secured' verdict.
+    respx.post(HELIUS_URL).mock(return_value=_json({"result": {"value": {"decimals": 6}}}))
+    with _client() as client:
+        assert client.get_token_supply("lpMint") is None
+
+
+@respx.mock
 def test_get_account_info_returns_value():
     respx.post(HELIUS_URL).mock(return_value=_json({"result": {"value": {"owner": "ownerProg"}}}))
     with _client() as client:

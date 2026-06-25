@@ -312,6 +312,25 @@ def test_verify_fungible_zero_supply_no_reserves_is_unknown():
     assert ev.secured is None and ev.method == "verify_failed"
 
 
+def test_verify_fungible_unreadable_supply_is_unknown():
+    # A degraded getTokenSupply (None) must degrade to unknown, never a false burn/secured.
+    fx = _FX["raydium_v4"]
+
+    class _C:
+        def get_account_info(self, addr, *, encoding="jsonParsed"):
+            return {"data": [fx["data_b64"], "base64"]}
+
+        def get_token_supply(self, mint):
+            return None  # RPC shape carried no parseable amount
+
+        def get_token_largest_accounts(self, mint):
+            return []
+
+    ev = verify_fungible(_C(), PoolRef(fx["pool"], "raydium", 50_000.0),
+                         "raydium_v4", RAYDIUM_V4_LP_MINT_OFFSET)
+    assert ev.secured is None and ev.method == "verify_failed"
+
+
 def test_largest_holders_with_owners_caps_to_top_n():
     largest = [{"address": f"TA{i}", "amount": "1"} for i in range(20)]
     accounts = {f"TA{i}": {"data": {"parsed": {"info": {"owner": f"o{i}"}}}} for i in range(20)}
