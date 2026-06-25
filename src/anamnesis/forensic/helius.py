@@ -36,6 +36,22 @@ LAUNCHPAD_AUTHORITIES = frozenset({
     "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",  # pump.fun program
 })
 
+# Curated, categorized funding-source addresses (cite-or-omit). Each entry MUST resolve to the
+# named entity on a public label source (e.g. solscan.io) before it is committed; an address we
+# cannot attribute is omitted, so an unlabelled funder honestly classifies as "unknown" rather
+# than guessed. Extend by appending entries.
+FUNDING_SOURCES: dict[str, str] = {
+    # "<verified-address>": "cex" | "bridge" | "mixer",  # <entity> — <source/citation>
+}
+
+
+def classify_funder(address: str | None) -> str:
+    """Classify a funding-source ``address`` as ``"cex"``/``"bridge"``/``"mixer"`` via the curated
+    ``FUNDING_SOURCES`` set, else ``"unknown"`` (also when the address is missing)."""
+    if not address:
+        return "unknown"
+    return FUNDING_SOURCES.get(address, "unknown")
+
 
 class HeliusError(RuntimeError):
     """A JSON-RPC error payload returned by the Helius endpoint."""

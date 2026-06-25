@@ -6,6 +6,7 @@ from anamnesis.forensic.helius import (
     HeliusClient,
     HeliusError,
     build_token_profile,
+    classify_funder,
     creation_time,
     fee_payer,
     holder_count,
@@ -337,3 +338,18 @@ class _NoDeployerClient(_FakeClient):
 def test_build_token_profile_allows_unknown_deployer():
     profile = build_token_profile(_NoDeployerClient(), "mintA")
     assert profile.deployer is None
+
+
+# --- A.8b: funding-source classification --------------------------------------------------
+
+
+def test_classify_funder_categorizes_known_and_unknown(monkeypatch):
+    monkeypatch.setattr(
+        "anamnesis.forensic.helius.FUNDING_SOURCES",
+        {"cexAddr": "cex", "bridgeAddr": "bridge", "mixerAddr": "mixer"},
+    )
+    assert classify_funder("cexAddr") == "cex"
+    assert classify_funder("bridgeAddr") == "bridge"
+    assert classify_funder("mixerAddr") == "mixer"
+    assert classify_funder("randomAddr") == "unknown"
+    assert classify_funder(None) == "unknown"
