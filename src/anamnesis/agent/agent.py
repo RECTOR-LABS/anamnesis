@@ -57,3 +57,27 @@ def build_function_list() -> list:
         },
         *NATIVE_TOOLS,
     ]
+
+
+def build_agent():
+    """Assemble the Anamnesis Qwen-Agent Assistant: native memory tools (A.7) + the forensic
+    MCP server (A.8), system instruction from prompts.py, qwen-max over DashScope-intl.
+
+    DASHSCOPE_API_KEY is resolved FIRST — before the qwen-agent import — so a missing key
+    raises an actionable RuntimeError, and that path stays testable in CI (where qwen-agent is
+    absent). Importing anamnesis.agent.tools fires its @register_tool decorators so the native
+    tool names resolve against Qwen-Agent's TOOL_REGISTRY before the Assistant is built.
+    """
+    api_key = config.require("DASHSCOPE_API_KEY")
+
+    from qwen_agent.agents import Assistant
+
+    from . import tools  # noqa: F401 — import populates the @register_tool registry
+    from .prompts import SYSTEM_INSTRUCTION
+
+    return Assistant(
+        llm=build_llm_cfg(api_key),
+        name="anamnesis",
+        system_message=SYSTEM_INSTRUCTION,
+        function_list=build_function_list(),
+    )
