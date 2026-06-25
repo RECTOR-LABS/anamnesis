@@ -8,6 +8,8 @@ locker program. Aggregator output is never trusted for the verdict — only on-c
 """
 from __future__ import annotations
 
+from .signals import LpEvidence, LpStatus
+
 # Canonical Solana burn account: tokens sent here are unspendable (supply is NOT decremented).
 INCINERATOR = "1nc1nerator11111111111111111111111111111111"
 
@@ -41,3 +43,20 @@ def secured_fraction(holders: list[dict], supply: int) -> float:
         if owner == INCINERATOR or owner in LP_LOCKERS:
             secured += int(h.get("amount") or 0)
     return secured / supply
+
+
+def aggregate(evidence: list[LpEvidence], *, dust_usd: float = DUST_LIQUIDITY_USD) -> LpStatus:
+    """Compose per-pool evidence by conservative precedence: NOT_SECURED > UNKNOWN > SECURED.
+
+    Only non-dust pools drive the verdict (a dust 'burned' decoy can't hide a deep unsecured
+    pool, and a dust unsecured pool can't flag an otherwise-secured token). With no non-dust
+    pool, or any non-dust pool we couldn't determine, the honest answer is UNKNOWN.
+    """
+    if not evidence:
+        return LpStatus.UNKNOWN
+    nondust = [e for e in evidence if (e.liquidity_usd or 0.0) >= dust_usd]
+    if any(e.secured is False for e in nondust):
+        return LpStatus.NOT_SECURED
+    if not nondust or any(e.secured is None for e in nondust):
+        return LpStatus.UNKNOWN
+    return LpStatus.SECURED
