@@ -36,6 +36,25 @@ LAUNCHPAD_AUTHORITIES = frozenset({
     "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",  # pump.fun program
 })
 
+# Curated, categorized funding-source addresses (cite-or-omit). Each entry MUST resolve to the
+# named entity on a public label source (e.g. solscan.io) before it is committed; an address we
+# cannot attribute is omitted, so an unlabelled funder honestly classifies as "unknown" rather
+# than guessed. Extend by appending entries.
+FUNDING_SOURCES: dict[str, str] = {
+    # CEX hot wallets — a deployer funded by a CEX withdrawal has that hot wallet as the fee
+    # payer of its seeding tx. Verified against public Solana label sources; extend by appending.
+    "is6MTRHEgyFLNTfYcuV4QBWLjrZBfmhVNYR6ccgr8KV": "cex",  # OKX: Hot Wallet — Solscan label
+    "GJRs4FwHtemZ5ZE9x3FNvJ8TMwitKTh21yxdRPqn7npE": "cex",  # Coinbase Hot Wallet 2 — Solscan/Arkham
+}
+
+
+def classify_funder(address: str | None) -> str:
+    """Classify a funding-source ``address`` as ``"cex"``/``"bridge"``/``"mixer"`` via the curated
+    ``FUNDING_SOURCES`` set, else ``"unknown"`` (also when the address is missing)."""
+    if not address:
+        return "unknown"
+    return FUNDING_SOURCES.get(address, "unknown")
+
 
 class HeliusError(RuntimeError):
     """A JSON-RPC error payload returned by the Helius endpoint."""
@@ -195,6 +214,96 @@ def resolve_origin(client: HeliusClient, mint: str) -> tuple[str | None, str | N
 def resolve_deployer(client: HeliusClient, mint: str) -> str | None:
     """The mint's deployer wallet (its memory key) — see :func:`resolve_origin`."""
     return resolve_origin(client, mint)[0]
+
+
+def funder_of(client: HeliusClient, deployer: str | None) -> tuple[str | None, str | None]:
+    """Return ``(funder, funded_at)`` — the wallet that paid the deployer's earliest transaction.
+
+    A fresh deploy wallet's first on-chain transaction is the transfer that seeded it, so that
+    tx's fee payer is its funder. Returns ``(None, None)`` when the deployer is unknown, has no
+    signatures, or its earliest tx was paid by the deployer itself (no identifiable inbound funder).
+    """
+    if not deployer:
+        return None, None
+    signature = client.oldest_signature(deployer)
+    if not signature:
+        return None, None
+    tx = client.get_transaction(signature)
+    payer = fee_payer(tx)
+    if payer is None or payer == deployer:
+        return None, None
+    return payer, creation_time(tx)
+
+
+_MINT_INIT_TYPES = frozenset({"initializeMint", "initializeMint2"})
+
+
+def _all_instructions(tx: dict) -> list[dict]:
+    """Every parsed instruction in a jsonParsed tx — top-level plus inner (CPI) instructions."""
+    message = ((tx or {}).get("transaction") or {}).get("message") or {}
+    top = message.get("instructions") or []
+    inner = [
+        ix
+        for group in (((tx or {}).get("meta") or {}).get("innerInstructions") or [])
+        for ix in (group.get("instructions") or [])
+    ]
+    return [*top, *inner]
+
+
+def created_mint_in_tx(tx: dict) -> str | None:
+    """The mint address initialized in ``tx`` (top-level or inner CPI), else ``None``.
+
+    Detects SPL Token and Token-2022 ``initializeMint``/``initializeMint2`` via the jsonParsed
+    instruction ``type`` (the RPC emits it for both token programs), reading ``info.mint``.
+    """
+    for ix in _all_instructions(tx):
+        parsed = ix.get("parsed") if isinstance(ix, dict) else None
+        if isinstance(parsed, dict) and parsed.get("type") in _MINT_INIT_TYPES:
+            mint = (parsed.get("info") or {}).get("mint")
+            if mint:
+                return mint
+    return None
+
+
+def created_mints(
+    client: HeliusClient, deployer: str | None, *, max_sigs: int = 1000, max_results: int = 50
+) -> tuple[list[dict], bool]:
+    """Scan the deployer's signatures (newest first) for mint-creation txs.
+
+    Returns ``([{"mint", "created_at"}, ...], truncated)``: the mints this wallet initialized,
+    capped at ``max_results`` results and ``max_sigs`` signatures scanned. ``truncated`` is True
+    only when the scan stopped on a cap (more history may exist), so a partial answer is never
+    mistaken for a complete one. Bounded to avoid the unbounded pagination that hangs
+    ``resolve_origin`` on high-activity wallets.
+    """
+    if not deployer:
+        return [], False
+    out: list[dict] = []
+    before: str | None = None
+    scanned = 0
+    while scanned < max_sigs:
+        page = client.get_signatures_for_address(deployer, before=before, limit=1000)
+        if not page:
+            return out, False  # exhausted the deployer's history
+        for entry in page:
+            if scanned >= max_sigs:
+                return out, True  # signature budget spent; more history may exist
+            scanned += 1
+            sig = entry.get("signature")
+            if not sig:
+                continue
+            tx = client.get_transaction(sig)
+            mint = created_mint_in_tx(tx)
+            if mint:
+                out.append({"mint": mint, "created_at": creation_time(tx)})
+                if len(out) >= max_results:
+                    return out, True  # result budget spent
+        if len(page) < 1000:
+            return out, False  # short final page — history exhausted
+        before = page[-1].get("signature")
+        if not before:
+            return out, False
+    return out, True
 
 
 LpResolver = Callable[[HeliusClient, str], bool]

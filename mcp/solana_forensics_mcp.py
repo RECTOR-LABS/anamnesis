@@ -1,5 +1,5 @@
 """Solana Forensics MCP server (A.8) — a thin FastMCP stdio wrapper over the tested forensic
-core. Spawned by the Qwen-Agent Assistant as a child process; exposes three grounded Solana
+core. Spawned by the Qwen-Agent Assistant as a child process; exposes five grounded Solana
 reads as MCP tools. ANAMNESIS_HELIUS_API_KEY is read from the process env — supplied by the
 parent through the MCP server `env` config when spawned (the stdio SDK strips unlisted vars, so
 it is passed explicitly, not inherited), or from your shell when run standalone. Never via argv.
@@ -13,7 +13,13 @@ from mcp.server.fastmcp import FastMCP
 
 from anamnesis import config
 from anamnesis.forensic.helius import HeliusClient
-from anamnesis.forensic.mcp_tools import deployer_dict, holders_dict, token_profile_dict
+from anamnesis.forensic.mcp_tools import (
+    deployer_dict,
+    deployer_token_history_dict,
+    holders_dict,
+    token_profile_dict,
+    trace_funding_dict,
+)
 
 # Instance named `server` (not `mcp`) to avoid shadowing the imported package.
 server = FastMCP("solana-forensics")
@@ -48,6 +54,20 @@ def get_holders(mint: str, top_n: int = 10) -> dict:
     """Holder concentration for a mint: total holders, top-holder percentage, and the
     largest token accounts (up to top_n)."""
     return holders_dict(_helius(), mint, top_n=top_n)
+
+
+@server.tool()
+def trace_funding(mint: str) -> dict:
+    """Classify how the mint's deployer was funded: the 1-hop funding wallet and whether it is a
+    known CEX, bridge, or mixer (else unknown). Mixer funding is a strong rug signal."""
+    return trace_funding_dict(_helius(), mint)
+
+
+@server.tool()
+def get_deployer_token_history(mint: str) -> dict:
+    """Other token mints the deployer has created — a live on-chain scan that surfaces serial
+    deployers. Bounded; the `truncated` flag marks a partial scan."""
+    return deployer_token_history_dict(_helius(), mint)
 
 
 def main() -> None:

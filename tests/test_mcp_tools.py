@@ -9,7 +9,13 @@ from __future__ import annotations
 import httpx
 
 from anamnesis.forensic.helius import HeliusError
-from anamnesis.forensic.mcp_tools import deployer_dict, holders_dict, token_profile_dict
+from anamnesis.forensic.mcp_tools import (
+    deployer_dict,
+    deployer_token_history_dict,
+    holders_dict,
+    token_profile_dict,
+    trace_funding_dict,
+)
 
 
 class _FakeClient:
@@ -109,7 +115,9 @@ class _DeployerRpcErrorClient(_FakeClient):
 
 def test_blank_mint_is_rejected_at_the_boundary():
     # mint validation on the public entry points (no wasted RPC, clear error).
-    for handler in (token_profile_dict, deployer_dict, holders_dict):
+    handlers = (token_profile_dict, deployer_dict, holders_dict,
+                trace_funding_dict, deployer_token_history_dict)
+    for handler in handlers:
         out = handler(_FakeClient(), "   ")
         assert "error" in out and out["mint"] == "   "
     assert "error" in token_profile_dict(_FakeClient(), "")
@@ -136,3 +144,74 @@ def test_holders_dict_clamps_nonpositive_top_n():
     # it clamps to an empty list rather than returning a misleading subset.
     assert holders_dict(_FakeClient(), "mintA", top_n=-1)["largest"] == []
     assert holders_dict(_FakeClient(), "mintA", top_n=0)["largest"] == []
+
+
+# --- A.8b: trace_funding handler ----------------------------------------------------------
+
+
+class _FundingClient:
+    # mint creation tx -> deployer "depl"; deployer's earliest tx -> funder "cexHot"
+    def oldest_signature(self, address, **_):
+        return {"mintA": "createSig", "depl": "fundSig"}.get(address)
+
+    def get_transaction(self, signature):
+        payer = {"createSig": "depl", "fundSig": "cexHot"}[signature]
+        return {"blockTime": 1700000000,
+                "transaction": {"message": {"accountKeys": [{"pubkey": payer}]}}}
+
+    def get_asset(self, mint):  # resolve_origin fallback (unused once the sig resolves)
+        return {"authorities": []}
+
+
+def test_trace_funding_dict_classifies_known_funder(monkeypatch):
+    monkeypatch.setattr("anamnesis.forensic.helius.FUNDING_SOURCES", {"cexHot": "cex"})
+    out = trace_funding_dict(_FundingClient(), "mintA")
+    assert out == {"mint": "mintA", "deployer": "depl", "funder": "cexHot",
+                   "source_type": "cex", "funded_at": "2023-11-14T22:13:20+00:00"}
+
+
+def test_trace_funding_dict_unknown_when_self_funded():
+    out = trace_funding_dict(_FakeClient(), "mintA")
+    assert out == {"mint": "mintA", "deployer": "deployerW", "funder": None,
+                   "source_type": "unknown", "funded_at": None}
+
+
+def test_trace_funding_dict_degrades_on_rpc_error():
+    assert trace_funding_dict(_DeployerRpcErrorClient(), "mintA") == {
+        "error": "getSignaturesForAddress failed: 429", "mint": "mintA"}
+
+
+# --- A.8b: deployer_token_history handler -------------------------------------------------
+
+
+class _DeployerHistoryClient(_FakeClient):
+    # mint creation -> deployer "depl"; deployer history page -> one creating tx (h1)
+    def oldest_signature(self, address, **_):
+        return {"mintA": "createSig", "depl": "h1"}.get(address, "createSig")
+
+    def get_signatures_for_address(self, address, *, before=None, limit=1000):
+        return [] if before else [{"signature": "h1"}, {"signature": "h2"}]
+
+    def get_transaction(self, signature):
+        if signature == "createSig":
+            return {"blockTime": 1700000000,
+                    "transaction": {"message": {"accountKeys": [{"pubkey": "depl"}]}}}
+        mint = {"h1": "childMintA"}.get(signature)
+        ix = [{"parsed": {"type": "initializeMint", "info": {"mint": mint}}}] if mint else []
+        return {"blockTime": 1700000000, "transaction": {"message": {"instructions": ix}}}
+
+
+def test_deployer_token_history_dict_lists_created_mints():
+    out = deployer_token_history_dict(_DeployerHistoryClient(), "mintA")
+    assert out == {
+        "mint": "mintA",
+        "deployer": "depl",
+        "created_mints": [{"mint": "childMintA", "created_at": "2023-11-14T22:13:20+00:00"}],
+        "count": 1,
+        "truncated": False,
+    }
+
+
+def test_deployer_token_history_dict_degrades_on_rpc_error():
+    assert deployer_token_history_dict(_DeployerRpcErrorClient(), "mintA") == {
+        "error": "getSignaturesForAddress failed: 429", "mint": "mintA"}

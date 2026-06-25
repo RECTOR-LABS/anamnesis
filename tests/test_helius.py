@@ -6,8 +6,12 @@ from anamnesis.forensic.helius import (
     HeliusClient,
     HeliusError,
     build_token_profile,
+    classify_funder,
+    created_mint_in_tx,
+    created_mints,
     creation_time,
     fee_payer,
+    funder_of,
     holder_count,
     parse_authorities,
     resolve_deployer,
@@ -337,3 +341,114 @@ class _NoDeployerClient(_FakeClient):
 def test_build_token_profile_allows_unknown_deployer():
     profile = build_token_profile(_NoDeployerClient(), "mintA")
     assert profile.deployer is None
+
+
+# --- A.8b: funding-source classification --------------------------------------------------
+
+
+def test_classify_funder_categorizes_known_and_unknown(monkeypatch):
+    monkeypatch.setattr(
+        "anamnesis.forensic.helius.FUNDING_SOURCES",
+        {"cexAddr": "cex", "bridgeAddr": "bridge", "mixerAddr": "mixer"},
+    )
+    assert classify_funder("cexAddr") == "cex"
+    assert classify_funder("bridgeAddr") == "bridge"
+    assert classify_funder("mixerAddr") == "mixer"
+    assert classify_funder("randomAddr") == "unknown"
+    assert classify_funder(None) == "unknown"
+
+
+def test_funding_sources_seed_entries_are_well_formed():
+    # Each curated entry must be a non-empty address mapped to a valid category and classified
+    # accordingly — guards against a typo'd category or address slipping into the forensic set.
+    from anamnesis.forensic.helius import FUNDING_SOURCES
+
+    for address, category in FUNDING_SOURCES.items():
+        assert isinstance(address, str) and address
+        assert category in {"cex", "bridge", "mixer"}
+        assert classify_funder(address) == category
+
+
+# --- A.8b: deployer funder resolution -----------------------------------------------------
+
+
+class _FunderClient:
+    def __init__(self, sig, payer):
+        self._sig, self._payer = sig, payer
+
+    def oldest_signature(self, address, **_):
+        return self._sig
+
+    def get_transaction(self, signature):
+        return {"blockTime": 1700000000,
+                "transaction": {"message": {"accountKeys": [{"pubkey": self._payer}]}}}
+
+
+def test_funder_of_returns_payer_of_earliest_tx():
+    funder, funded_at = funder_of(_FunderClient("fundSig", "cexHot"), "deployerW")
+    assert funder == "cexHot"
+    assert funded_at == "2023-11-14T22:13:20+00:00"
+
+
+def test_funder_of_none_when_self_paid_or_unresolved():
+    assert funder_of(_FunderClient("sig", "deployerW"), "deployerW") == (None, None)
+    assert funder_of(_FunderClient(None, "x"), "deployerW") == (None, None)
+    assert funder_of(_FunderClient("sig", "x"), None) == (None, None)
+
+
+# --- A.8b: deployer mint-creation history -------------------------------------------------
+
+
+def test_created_mint_in_tx_detects_top_level_and_inner():
+    top = {"transaction": {"message": {"instructions": [
+        {"parsed": {"type": "initializeMint", "info": {"mint": "mintTop"}}}]}}}
+    assert created_mint_in_tx(top) == "mintTop"
+    inner = {"transaction": {"message": {"instructions": []}},
+             "meta": {"innerInstructions": [{"instructions": [
+                 {"parsed": {"type": "initializeMint2", "info": {"mint": "mintInner"}}}]}]}}
+    assert created_mint_in_tx(inner) == "mintInner"
+
+
+def test_created_mint_in_tx_none_when_no_mint_init():
+    tx = {"transaction": {"message": {"instructions": [
+        {"parsed": {"type": "transfer", "info": {"lamports": 1}}}]}}}
+    assert created_mint_in_tx(tx) is None
+    assert created_mint_in_tx({}) is None
+
+
+class _HistoryClient:
+    def __init__(self, sigs, creating):
+        self._sigs, self._creating = sigs, creating
+
+    def get_signatures_for_address(self, address, *, before=None, limit=1000):
+        return [] if before else [{"signature": s} for s in self._sigs]
+
+    def get_transaction(self, signature):
+        mint = self._creating.get(signature)
+        ix = [{"parsed": {"type": "initializeMint", "info": {"mint": mint}}}] if mint else []
+        return {"blockTime": 1700000000, "transaction": {"message": {"instructions": ix}}}
+
+
+def test_created_mints_collects_creations_only():
+    client = _HistoryClient(["s1", "s2", "s3"], {"s1": "mintA", "s3": "mintC"})
+    mints, truncated = created_mints(client, "deployerW")
+    assert [m["mint"] for m in mints] == ["mintA", "mintC"]
+    assert truncated is False
+
+
+def test_created_mints_truncates_on_result_cap():
+    client = _HistoryClient(["s1", "s2", "s3"], {"s1": "m1", "s2": "m2", "s3": "m3"})
+    mints, truncated = created_mints(client, "deployerW", max_results=2)
+    assert [m["mint"] for m in mints] == ["m1", "m2"]
+    assert truncated is True
+
+
+def test_created_mints_truncates_on_signature_cap():
+    client = _HistoryClient(["s1", "s2", "s3"], {"s3": "m3"})
+    mints, truncated = created_mints(client, "deployerW", max_sigs=2)
+    assert mints == []
+    assert truncated is True
+
+
+def test_created_mints_empty_for_unknown_deployer():
+    assert created_mints(_HistoryClient([], {}), None) == ([], False)
