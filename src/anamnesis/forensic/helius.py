@@ -216,6 +216,25 @@ def resolve_deployer(client: HeliusClient, mint: str) -> str | None:
     return resolve_origin(client, mint)[0]
 
 
+def funder_of(client: HeliusClient, deployer: str | None) -> tuple[str | None, str | None]:
+    """Return ``(funder, funded_at)`` — the wallet that paid the deployer's earliest transaction.
+
+    A fresh deploy wallet's first on-chain transaction is the transfer that seeded it, so that
+    tx's fee payer is its funder. Returns ``(None, None)`` when the deployer is unknown, has no
+    signatures, or its earliest tx was paid by the deployer itself (no identifiable inbound funder).
+    """
+    if not deployer:
+        return None, None
+    signature = client.oldest_signature(deployer)
+    if not signature:
+        return None, None
+    tx = client.get_transaction(signature)
+    payer = fee_payer(tx)
+    if payer is None or payer == deployer:
+        return None, None
+    return payer, creation_time(tx)
+
+
 LpResolver = Callable[[HeliusClient, str], bool]
 
 

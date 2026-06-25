@@ -9,6 +9,7 @@ from anamnesis.forensic.helius import (
     classify_funder,
     creation_time,
     fee_payer,
+    funder_of,
     holder_count,
     parse_authorities,
     resolve_deployer,
@@ -364,3 +365,30 @@ def test_funding_sources_seed_entries_are_well_formed():
         assert isinstance(address, str) and address
         assert category in {"cex", "bridge", "mixer"}
         assert classify_funder(address) == category
+
+
+# --- A.8b: deployer funder resolution -----------------------------------------------------
+
+
+class _FunderClient:
+    def __init__(self, sig, payer):
+        self._sig, self._payer = sig, payer
+
+    def oldest_signature(self, address, **_):
+        return self._sig
+
+    def get_transaction(self, signature):
+        return {"blockTime": 1700000000,
+                "transaction": {"message": {"accountKeys": [{"pubkey": self._payer}]}}}
+
+
+def test_funder_of_returns_payer_of_earliest_tx():
+    funder, funded_at = funder_of(_FunderClient("fundSig", "cexHot"), "deployerW")
+    assert funder == "cexHot"
+    assert funded_at == "2023-11-14T22:13:20+00:00"
+
+
+def test_funder_of_none_when_self_paid_or_unresolved():
+    assert funder_of(_FunderClient("sig", "deployerW"), "deployerW") == (None, None)
+    assert funder_of(_FunderClient(None, "x"), "deployerW") == (None, None)
+    assert funder_of(_FunderClient("sig", "x"), None) == (None, None)
