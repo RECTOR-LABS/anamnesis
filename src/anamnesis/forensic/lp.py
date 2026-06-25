@@ -72,6 +72,7 @@ RAYDIUM_V4_LP_MINT_OFFSET = 464    # AmmInfo.lp_mint
 RAYDIUM_CPMM_LP_MINT_OFFSET = 136  # PoolState.lp_mint (after 8-byte Anchor discriminator)
 PUMPSWAP_LP_MINT_OFFSET = 107      # pump_amm Pool.lp_mint (disc + bump/index/creator/base/quote)
 METEORA_DAMM_V1_LP_MINT_OFFSET = 8 # dynamic-amm Pool.lp_mint (first field after discriminator)
+BONDING_CURVE_COMPLETE_OFFSET = 48 # pump.fun BondingCurve.complete bool (disc + 5×u64 reserves)
 
 
 def secured_fraction(holders: list[dict], supply: int) -> float:
@@ -182,6 +183,31 @@ def verify_fungible(helius, pool: PoolRef, venue: str, lp_mint_offset: int) -> L
                       citation=lp_mint)
 
 
+def verify_pumpfun_curve(helius, pool: PoolRef) -> LpEvidence:
+    """pump.fun bonding curve: pre-graduation liquidity is program-custodied — the deployer
+    cannot withdraw it (not burned/locked, but unruggable by withdrawal) => SECURED. A graduated
+    curve (``complete``) defers to its migrated PumpSwap/Raydium pool, which carries the verdict,
+    so it asserts nothing (``secured=None``) to avoid double-counting the same liquidity."""
+    acct = helius.get_account_info(pool.pool, encoding="base64")
+    data = acct.get("data")
+    data_b64 = data[0] if isinstance(data, list) and data else None
+    if not data_b64:
+        return LpEvidence("pumpfun_curve", pool.pool, None, "verify_failed", None,
+                          "bonding-curve account had no decodable data", pool.liquidity_usd)
+    raw = base64.b64decode(data_b64)
+    if len(raw) <= BONDING_CURVE_COMPLETE_OFFSET:
+        return LpEvidence("pumpfun_curve", pool.pool, None, "verify_failed", None,
+                          "bonding-curve account too small to read 'complete'", pool.liquidity_usd)
+    if raw[BONDING_CURVE_COMPLETE_OFFSET]:
+        return LpEvidence("pumpfun_curve", pool.pool, None, "bonding_curve_custody", None,
+                          "pump.fun curve complete (graduated); the migrated pool carries the "
+                          "verdict.", pool.liquidity_usd)
+    return LpEvidence("pumpfun_curve", pool.pool, None, "bonding_curve_custody", True,
+                      "liquidity held by the pump.fun bonding curve (program-custodied); the "
+                      "deployer cannot withdraw — not burned/locked but unruggable by withdrawal.",
+                      pool.liquidity_usd)
+
+
 def _fungible_verifier(venue: str, lp_mint_offset: int) -> Callable[..., LpEvidence]:
     """Bind verify_fungible to a venue's pinned lp_mint offset → a (helius, pool) verifier."""
     return lambda helius, pool: verify_fungible(helius, pool, venue, lp_mint_offset)
@@ -196,6 +222,7 @@ _VENUE_VERIFIERS: dict[str, Callable[..., LpEvidence]] = {
     "raydium_cpmm": _fungible_verifier("raydium_cpmm", RAYDIUM_CPMM_LP_MINT_OFFSET),
     "pumpswap": _fungible_verifier("pumpswap", PUMPSWAP_LP_MINT_OFFSET),
     "meteora_damm_v1": _fungible_verifier("meteora_damm_v1", METEORA_DAMM_V1_LP_MINT_OFFSET),
+    "pumpfun_curve": verify_pumpfun_curve,
 }
 # A per-pool read may hit an RPC error or an unexpected on-chain shape; degrade that pool to
 # 'unknown' rather than crash the whole assessment (the verdict stays honest, never false-secure).

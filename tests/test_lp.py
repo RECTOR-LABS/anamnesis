@@ -361,6 +361,54 @@ def test_largest_holders_with_owners_caps_to_top_n():
     assert len(holders) == 3 and holders[0]["owner"] == "o0"
 
 
+def test_bonding_curve_complete_offset_reads_incomplete():
+    from anamnesis.forensic.lp import BONDING_CURVE_COMPLETE_OFFSET
+
+    fx = _FX["pumpfun_curve"]
+    raw = base64.b64decode(fx["data_b64"])
+    assert BONDING_CURVE_COMPLETE_OFFSET == fx["complete_offset"]
+    assert bool(raw[BONDING_CURVE_COMPLETE_OFFSET]) is False  # pre-graduation snapshot
+
+
+def test_pumpfun_pre_graduation_is_secured_by_custody():
+    # Pre-grad: liquidity is custodied by the bonding-curve program; the deployer cannot
+    # withdraw it (not burned/locked, but unruggable by withdrawal) => SECURED.
+    from anamnesis.forensic.lp import verify_pumpfun_curve
+
+    fx = _FX["pumpfun_curve"]
+
+    class _C:
+        def get_account_info(self, addr, *, encoding="jsonParsed"):
+            return {"data": [fx["data_b64"], "base64"]}
+
+    ev = verify_pumpfun_curve(_C(), PoolRef(fx["account"], "pumpfun", 5_000.0))
+    assert ev.secured is True and ev.method == "bonding_curve_custody"
+
+
+def test_pumpfun_graduated_curve_defers_verdict():
+    # complete == True: the curve graduated; its migrated PumpSwap/Raydium pool carries the
+    # verdict, so the curve itself must NOT assert secured (None), to avoid double-counting.
+    from anamnesis.forensic.lp import verify_pumpfun_curve
+
+    fx = _FX["pumpfun_curve"]
+    raw = bytearray(base64.b64decode(fx["data_b64"]))
+    raw[fx["complete_offset"]] = 1  # flip complete -> True
+    grad_b64 = base64.b64encode(bytes(raw)).decode()
+
+    class _C:
+        def get_account_info(self, addr, *, encoding="jsonParsed"):
+            return {"data": [grad_b64, "base64"]}
+
+    ev = verify_pumpfun_curve(_C(), PoolRef("CURVE", "pumpfun", 5_000.0))
+    assert ev.secured is None and ev.method == "bonding_curve_custody"
+
+
+def test_pumpfun_curve_registered():
+    from anamnesis.forensic.lp import _VENUE_VERIFIERS
+
+    assert "pumpfun_curve" in _VENUE_VERIFIERS
+
+
 def test_analyzer_caps_pools_and_notes_skipped():
     pairs = [{"pairAddress": f"P{i}", "dexId": "x", "liquidity": {"usd": float(i)}} for i in range(20)]
 
