@@ -200,6 +200,31 @@ def test_verify_fungible_locker_held_is_secured_locked():
     assert ev.secured is True and ev.method.startswith("lp_locked:")
 
 
+def test_verify_fungible_dust_locker_does_not_falsely_secure():
+    # A rugger parks a dust amount of LP in a known locker while keeping the rest withdrawable.
+    # The locker's mere presence must NOT certify an otherwise-withdrawable pool as secured —
+    # the secured FRACTION (which already counts locker-held LP) must clear the threshold.
+    fx = _FX["raydium_v4"]
+    locker = next(iter(LP_LOCKERS))
+
+    class _C:
+        def get_account_info(self, addr, *, encoding="jsonParsed"):
+            if addr == fx["pool"]:
+                return {"data": [fx["data_b64"], "base64"]}
+            owners = {"TA_LOCK": locker, "TA_DEP": "deployerWallet"}
+            return {"data": {"parsed": {"info": {"owner": owners.get(addr, "deployerWallet")}}}}
+
+        def get_token_supply(self, mint):
+            return 1000
+
+        def get_token_largest_accounts(self, mint):
+            return [{"address": "TA_DEP", "amount": "990"}, {"address": "TA_LOCK", "amount": "10"}]
+
+    ev = verify_fungible(_C(), PoolRef(fx["pool"], "raydium", 50_000.0),
+                         "raydium_v4", RAYDIUM_V4_LP_MINT_OFFSET)
+    assert ev.secured is False and ev.method == "withdrawable"
+
+
 def test_analyzer_routes_raydium_and_aggregates_secured():
     fx = _FX["raydium_v4"]
     ray_v4 = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"

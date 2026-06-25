@@ -133,11 +133,15 @@ def largest_holders_with_owners(helius, lp_mint: str, *, top: int = TOP_HOLDERS_
 
 
 def _classify(frac: float, locker_owner: str | None) -> tuple[bool, str]:
-    """Map a secured fraction + any locker owner to (secured, method)."""
-    if locker_owner:
-        return True, f"lp_locked:{LP_LOCKERS.get(locker_owner, 'locker')}"
+    """Map a secured fraction + any locker owner to (secured, method).
+
+    The verdict is driven by ``frac`` — which already counts both incinerator- and locker-held
+    LP — so a dust locker position can never certify an otherwise-withdrawable pool as secured.
+    ``locker_owner`` only selects the method LABEL once the secured threshold is met via a locker.
+    """
     if frac >= SECURED_FRACTION_THRESHOLD:
-        return True, "lp_mint_burned"
+        method = f"lp_locked:{LP_LOCKERS.get(locker_owner, 'locker')}" if locker_owner else "lp_mint_burned"
+        return True, method
     return False, "withdrawable"
 
 
