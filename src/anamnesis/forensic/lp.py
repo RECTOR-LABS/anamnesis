@@ -9,6 +9,7 @@ locker program. Aggregator output is never trusted for the verdict — only on-c
 from __future__ import annotations
 
 import base64
+from collections.abc import Callable
 
 import httpx
 
@@ -64,7 +65,6 @@ PROGRAM_TO_VENUE: dict[str, str] = {
     "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA": "pumpswap",
     "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P": "pumpfun_curve",
 }
-FUNGIBLE_LP_VENUES = frozenset({"raydium_v4", "raydium_cpmm", "meteora_damm_v1", "pumpswap"})
 
 # lp_mint byte offsets in each pool's account layout — pinned against live fixtures
 # (tests/fixtures/lp_pool_accounts.json); see test_*_offset_decodes_known_lp_mint.
@@ -180,10 +180,18 @@ def verify_fungible(helius, pool: PoolRef, venue: str, lp_mint_offset: int) -> L
                       citation=lp_mint)
 
 
-# Venues whose lp_mint offset is pinned (and thus on-chain-verifiable). Extended per venue.
-_VENUE_OFFSETS = {
-    "raydium_v4": RAYDIUM_V4_LP_MINT_OFFSET,
-    "raydium_cpmm": RAYDIUM_CPMM_LP_MINT_OFFSET,
+def _fungible_verifier(venue: str, lp_mint_offset: int) -> Callable[..., LpEvidence]:
+    """Bind verify_fungible to a venue's pinned lp_mint offset → a (helius, pool) verifier."""
+    return lambda helius, pool: verify_fungible(helius, pool, venue, lp_mint_offset)
+
+
+# venue -> verifier(helius, pool) -> LpEvidence. Offset-based fungible venues bind verify_fungible
+# with their pinned lp_mint offset; non-offset venues (e.g. the pump.fun bonding curve) register
+# their own verifier. A venue absent here is not yet on-chain-verifiable (position-NFT / Phase-2
+# venue) and degrades to UNKNOWN. Adding a venue is a single row — no edit to dispatch.
+_VENUE_VERIFIERS: dict[str, Callable[..., LpEvidence]] = {
+    "raydium_v4": _fungible_verifier("raydium_v4", RAYDIUM_V4_LP_MINT_OFFSET),
+    "raydium_cpmm": _fungible_verifier("raydium_cpmm", RAYDIUM_CPMM_LP_MINT_OFFSET),
 }
 # A per-pool read may hit an RPC error or an unexpected on-chain shape; degrade that pool to
 # 'unknown' rather than crash the whole assessment (the verdict stays honest, never false-secure).
@@ -217,8 +225,9 @@ class LpAnalyzer:
     def _verify(self, helius, pool: PoolRef) -> LpEvidence:
         try:
             venue = venue_of(helius, pool.pool)
-            if venue in _VENUE_OFFSETS:
-                return verify_fungible(helius, pool, venue, _VENUE_OFFSETS[venue])
+            verifier = _VENUE_VERIFIERS.get(venue)
+            if verifier is not None:
+                return verifier(helius, pool)
             return LpEvidence(venue, pool.pool, None, "position_nft_unverified", None,
                               "venue not yet on-chain-verifiable (position-NFT or Phase-2 venue).",
                               pool.liquidity_usd)
