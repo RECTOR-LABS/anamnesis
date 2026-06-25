@@ -1,6 +1,8 @@
 """Solana Forensics MCP server (A.8) — a thin FastMCP stdio wrapper over the tested forensic
 core. Spawned by the Qwen-Agent Assistant as a child process; exposes three grounded Solana
-reads as MCP tools. ANAMNESIS_HELIUS_API_KEY is read from the inherited process env (never argv).
+reads as MCP tools. ANAMNESIS_HELIUS_API_KEY is read from the process env — supplied by the
+parent through the MCP server `env` config when spawned (the stdio SDK strips unlisted vars, so
+it is passed explicitly, not inherited), or from your shell when run standalone. Never via argv.
 
 Run standalone (stdio):  python mcp/solana_forensics_mcp.py
 """
@@ -48,5 +50,18 @@ def get_holders(mint: str, top_n: int = 10) -> dict:
     return holders_dict(_helius(), mint, top_n=top_n)
 
 
+def main() -> None:
+    """Validate config and open the Helius client BEFORE serving, then serve until shutdown.
+
+    Resolving ``ANAMNESIS_HELIUS_API_KEY`` here makes a missing/invalid key fail loudly at
+    startup instead of surfacing as a per-mint tool error on the first call. Building the
+    singleton in this single-threaded ``with`` (rather than lazily inside a tool call) both
+    pre-warms it past the check-then-act race in ``_helius`` and closes the underlying HTTP
+    client on shutdown.
+    """
+    with _helius():
+        server.run()
+
+
 if __name__ == "__main__":
-    server.run()
+    main()
