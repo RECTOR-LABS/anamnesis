@@ -9,6 +9,7 @@ locker program. Aggregator output is never trusted for the verdict — only on-c
 from __future__ import annotations
 
 import base64
+from collections.abc import Callable
 
 import httpx
 
@@ -64,12 +65,14 @@ PROGRAM_TO_VENUE: dict[str, str] = {
     "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA": "pumpswap",
     "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P": "pumpfun_curve",
 }
-FUNGIBLE_LP_VENUES = frozenset({"raydium_v4", "raydium_cpmm", "meteora_damm_v1", "pumpswap"})
 
 # lp_mint byte offsets in each pool's account layout — pinned against live fixtures
 # (tests/fixtures/lp_pool_accounts.json); see test_*_offset_decodes_known_lp_mint.
 RAYDIUM_V4_LP_MINT_OFFSET = 464    # AmmInfo.lp_mint
 RAYDIUM_CPMM_LP_MINT_OFFSET = 136  # PoolState.lp_mint (after 8-byte Anchor discriminator)
+PUMPSWAP_LP_MINT_OFFSET = 107      # pump_amm Pool.lp_mint (disc + bump/index/creator/base/quote)
+METEORA_DAMM_V1_LP_MINT_OFFSET = 8 # dynamic-amm Pool.lp_mint (first field after discriminator)
+BONDING_CURVE_COMPLETE_OFFSET = 48 # pump.fun BondingCurve.complete bool (disc + 5×u64 reserves)
 
 
 def secured_fraction(holders: list[dict], supply: int) -> float:
@@ -180,10 +183,46 @@ def verify_fungible(helius, pool: PoolRef, venue: str, lp_mint_offset: int) -> L
                       citation=lp_mint)
 
 
-# Venues whose lp_mint offset is pinned (and thus on-chain-verifiable). Extended per venue.
-_VENUE_OFFSETS = {
-    "raydium_v4": RAYDIUM_V4_LP_MINT_OFFSET,
-    "raydium_cpmm": RAYDIUM_CPMM_LP_MINT_OFFSET,
+def verify_pumpfun_curve(helius, pool: PoolRef) -> LpEvidence:
+    """pump.fun bonding curve: pre-graduation liquidity is program-custodied — the deployer
+    cannot withdraw it (not burned/locked, but unruggable by withdrawal) => SECURED. A graduated
+    curve (``complete``) defers to its migrated PumpSwap/Raydium pool, which carries the verdict,
+    so it asserts nothing (``secured=None``) to avoid double-counting the same liquidity."""
+    acct = helius.get_account_info(pool.pool, encoding="base64")
+    data = acct.get("data")
+    data_b64 = data[0] if isinstance(data, list) and data else None
+    if not data_b64:
+        return LpEvidence("pumpfun_curve", pool.pool, None, "verify_failed", None,
+                          "bonding-curve account had no decodable data", pool.liquidity_usd)
+    raw = base64.b64decode(data_b64)
+    if len(raw) <= BONDING_CURVE_COMPLETE_OFFSET:
+        return LpEvidence("pumpfun_curve", pool.pool, None, "verify_failed", None,
+                          "bonding-curve account too small to read 'complete'", pool.liquidity_usd)
+    if raw[BONDING_CURVE_COMPLETE_OFFSET]:
+        return LpEvidence("pumpfun_curve", pool.pool, None, "bonding_curve_custody", None,
+                          "pump.fun curve complete (graduated); the migrated pool carries the "
+                          "verdict.", pool.liquidity_usd)
+    return LpEvidence("pumpfun_curve", pool.pool, None, "bonding_curve_custody", True,
+                      "liquidity held by the pump.fun bonding curve (program-custodied); the "
+                      "deployer cannot withdraw — not burned/locked but unruggable by withdrawal.",
+                      pool.liquidity_usd)
+
+
+def _fungible_verifier(venue: str, lp_mint_offset: int) -> Callable[..., LpEvidence]:
+    """Bind verify_fungible to a venue's pinned lp_mint offset → a (helius, pool) verifier."""
+    return lambda helius, pool: verify_fungible(helius, pool, venue, lp_mint_offset)
+
+
+# venue -> verifier(helius, pool) -> LpEvidence. Offset-based fungible venues bind verify_fungible
+# with their pinned lp_mint offset; non-offset venues (e.g. the pump.fun bonding curve) register
+# their own verifier. A venue absent here is not yet on-chain-verifiable (position-NFT / Phase-2
+# venue) and degrades to UNKNOWN. Adding a venue is a single row — no edit to dispatch.
+_VENUE_VERIFIERS: dict[str, Callable[..., LpEvidence]] = {
+    "raydium_v4": _fungible_verifier("raydium_v4", RAYDIUM_V4_LP_MINT_OFFSET),
+    "raydium_cpmm": _fungible_verifier("raydium_cpmm", RAYDIUM_CPMM_LP_MINT_OFFSET),
+    "pumpswap": _fungible_verifier("pumpswap", PUMPSWAP_LP_MINT_OFFSET),
+    "meteora_damm_v1": _fungible_verifier("meteora_damm_v1", METEORA_DAMM_V1_LP_MINT_OFFSET),
+    "pumpfun_curve": verify_pumpfun_curve,
 }
 # A per-pool read may hit an RPC error or an unexpected on-chain shape; degrade that pool to
 # 'unknown' rather than crash the whole assessment (the verdict stays honest, never false-secure).
@@ -217,8 +256,9 @@ class LpAnalyzer:
     def _verify(self, helius, pool: PoolRef) -> LpEvidence:
         try:
             venue = venue_of(helius, pool.pool)
-            if venue in _VENUE_OFFSETS:
-                return verify_fungible(helius, pool, venue, _VENUE_OFFSETS[venue])
+            verifier = _VENUE_VERIFIERS.get(venue)
+            if verifier is not None:
+                return verifier(helius, pool)
             return LpEvidence(venue, pool.pool, None, "position_nft_unverified", None,
                               "venue not yet on-chain-verifiable (position-NFT or Phase-2 venue).",
                               pool.liquidity_usd)

@@ -149,6 +149,29 @@ def test_raydium_cpmm_offset_decodes_known_lp_mint():
     assert _pubkey_at(fx["data_b64"], RAYDIUM_CPMM_LP_MINT_OFFSET) == fx["lp_mint"]
 
 
+def test_pumpswap_offset_decodes_known_lp_mint():
+    from anamnesis.forensic.lp import PUMPSWAP_LP_MINT_OFFSET
+
+    fx = _FX["pumpswap"]
+    assert PUMPSWAP_LP_MINT_OFFSET == fx["offset"]
+    assert _pubkey_at(fx["data_b64"], PUMPSWAP_LP_MINT_OFFSET) == fx["lp_mint"]
+
+
+def test_meteora_damm_v1_offset_decodes_known_lp_mint():
+    from anamnesis.forensic.lp import METEORA_DAMM_V1_LP_MINT_OFFSET
+
+    fx = _FX["meteora_damm_v1"]
+    assert METEORA_DAMM_V1_LP_MINT_OFFSET == fx["offset"]
+    assert _pubkey_at(fx["data_b64"], METEORA_DAMM_V1_LP_MINT_OFFSET) == fx["lp_mint"]
+
+
+def test_phase1b_fungible_venues_registered():
+    # PumpSwap + Meteora DAMM v1 must be wired into dispatch, not just have offset constants.
+    from anamnesis.forensic.lp import _VENUE_VERIFIERS
+
+    assert {"pumpswap", "meteora_damm_v1"} <= set(_VENUE_VERIFIERS)
+
+
 def test_verify_fungible_burned_is_secured():
     fx = _FX["raydium_v4"]
     ev = verify_fungible(_burned_client(fx), PoolRef(fx["pool"], "raydium", 50_000.0),
@@ -336,6 +359,54 @@ def test_largest_holders_with_owners_caps_to_top_n():
     accounts = {f"TA{i}": {"data": {"parsed": {"info": {"owner": f"o{i}"}}}} for i in range(20)}
     holders = largest_holders_with_owners(_AcctClient(accounts, largest=largest), "lpMint", top=3)
     assert len(holders) == 3 and holders[0]["owner"] == "o0"
+
+
+def test_bonding_curve_complete_offset_reads_incomplete():
+    from anamnesis.forensic.lp import BONDING_CURVE_COMPLETE_OFFSET
+
+    fx = _FX["pumpfun_curve"]
+    raw = base64.b64decode(fx["data_b64"])
+    assert BONDING_CURVE_COMPLETE_OFFSET == fx["complete_offset"]
+    assert bool(raw[BONDING_CURVE_COMPLETE_OFFSET]) is False  # pre-graduation snapshot
+
+
+def test_pumpfun_pre_graduation_is_secured_by_custody():
+    # Pre-grad: liquidity is custodied by the bonding-curve program; the deployer cannot
+    # withdraw it (not burned/locked, but unruggable by withdrawal) => SECURED.
+    from anamnesis.forensic.lp import verify_pumpfun_curve
+
+    fx = _FX["pumpfun_curve"]
+
+    class _C:
+        def get_account_info(self, addr, *, encoding="jsonParsed"):
+            return {"data": [fx["data_b64"], "base64"]}
+
+    ev = verify_pumpfun_curve(_C(), PoolRef(fx["account"], "pumpfun", 5_000.0))
+    assert ev.secured is True and ev.method == "bonding_curve_custody"
+
+
+def test_pumpfun_graduated_curve_defers_verdict():
+    # complete == True: the curve graduated; its migrated PumpSwap/Raydium pool carries the
+    # verdict, so the curve itself must NOT assert secured (None), to avoid double-counting.
+    from anamnesis.forensic.lp import verify_pumpfun_curve
+
+    fx = _FX["pumpfun_curve"]
+    raw = bytearray(base64.b64decode(fx["data_b64"]))
+    raw[fx["complete_offset"]] = 1  # flip complete -> True
+    grad_b64 = base64.b64encode(bytes(raw)).decode()
+
+    class _C:
+        def get_account_info(self, addr, *, encoding="jsonParsed"):
+            return {"data": [grad_b64, "base64"]}
+
+    ev = verify_pumpfun_curve(_C(), PoolRef("CURVE", "pumpfun", 5_000.0))
+    assert ev.secured is None and ev.method == "bonding_curve_custody"
+
+
+def test_pumpfun_curve_registered():
+    from anamnesis.forensic.lp import _VENUE_VERIFIERS
+
+    assert "pumpfun_curve" in _VENUE_VERIFIERS
 
 
 def test_analyzer_caps_pools_and_notes_skipped():
