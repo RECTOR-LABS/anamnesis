@@ -7,6 +7,7 @@ on-chain (forensic/lp.py). The interface leaves a seam for a GeckoTerminal fallb
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 
 import httpx
@@ -28,8 +29,9 @@ class PoolRef:
 class DexScreenerClient:
     """Minimal keyless DexScreener client (token-pairs lookup)."""
 
-    def __init__(self, *, timeout: float = 20.0) -> None:
+    def __init__(self, *, timeout: float = 20.0, max_retries: int = 4) -> None:
         self._client = httpx.Client(timeout=timeout, base_url=DEXSCREENER_BASE)
+        self._max_retries = max_retries
 
     def __enter__(self) -> DexScreenerClient:
         return self
@@ -41,13 +43,31 @@ class DexScreenerClient:
         self._client.close()
 
     def token_pairs(self, mint: str) -> list[dict]:
-        """All Solana pairs for a mint; raises AggregatorError on transport/shape failure."""
-        try:
-            resp = self._client.get(f"/token-pairs/v1/solana/{mint}")
-            resp.raise_for_status()
-            data = resp.json()
-        except (httpx.HTTPError, ValueError) as e:  # ValueError = bad JSON
-            raise AggregatorError(f"dexscreener token-pairs failed: {e}") from e
+        """All Solana pairs for a mint; raises AggregatorError on transport/shape failure.
+
+        The keyless DexScreener API is rate-limited, so 429s are retried with bounded
+        exponential backoff (mirroring HeliusClient._rpc) rather than failing the whole LP
+        verdict on the first throttle during high-pool fan-out.
+        """
+        attempt = 0
+        while True:
+            try:
+                resp = self._client.get(f"/token-pairs/v1/solana/{mint}")
+                resp.raise_for_status()
+                data = resp.json()
+                break
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429 and attempt < self._max_retries:
+                    time.sleep(min(2.0, 0.25 * 2 ** attempt))
+                    attempt += 1
+                    continue
+                raise AggregatorError(
+                    f"dexscreener token-pairs failed: HTTP {e.response.status_code}"
+                ) from None
+            except (httpx.HTTPError, ValueError) as e:  # transport error or bad JSON
+                raise AggregatorError(
+                    f"dexscreener token-pairs failed: {type(e).__name__}"
+                ) from None
         if not isinstance(data, list):
             raise AggregatorError(
                 f"dexscreener token-pairs: expected a list, got {type(data).__name__}"
