@@ -8,14 +8,16 @@ the first 48h" and §"Deployment — Alibaba Cloud").
 
 | Gate | Service | Env var | Verify | Status |
 |------|---------|---------|--------|--------|
-| #1 | Qwen / DashScope (`qwen-max`) | `ANAMNESIS_DASHSCOPE_API_KEY` | `scripts/check_qwen.py` | ⬜ to open |
-| #2 | ApsaraDB for MongoDB | `ANAMNESIS_MONGODB_URI` | `scripts/check_mongo.py` | ⬜ to open |
+| #1 | Qwen / DashScope (`qwen-max`) | `ANAMNESIS_DASHSCOPE_API_KEY` | `scripts/check_qwen.py` | ✅ open (Singapore key live) |
+| #2 | ApsaraDB for MongoDB | `ANAMNESIS_MONGODB_URI` | `scripts/check_mongo.py` | 🟡 dev via reclabs3 Mongo; managed ApsaraDB → demo |
 | #3 | Helius Solana RPC | `ANAMNESIS_HELIUS_API_KEY` | `scripts/check_helius.py` | ✅ open |
 
-> Gates #1 and #2 are **external provisioning** — they need an Alibaba Cloud account,
-> hackathon credits, and a managed instance. They cannot be opened from the codebase; this
-> runbook is the checklist for the human who can. Once both are open, **A.10** (live agent /
-> WebUI smoke, demo seed, Alibaba Cloud deploy) is unblocked.
+> **Status (2026-06-27):** Gate #1 is **open** — a Singapore Model Studio key is live and
+> `qwen-max` verified. Gate #3 (Helius) is open. For #2, a **local dev MongoDB on reclabs3**
+> serves development now (see "Local dev database" under Gate #2); the **managed ApsaraDB** is
+> deferred to the demo, where it doubles as the judged Alibaba-deploy artifact. The agent can
+> now run locally against real Qwen + Mongo + Helius; the hosted Alibaba deploy (**A.10**) is
+> the remaining gate-dependent milestone.
 
 ## Secrets discipline (read first)
 
@@ -43,8 +45,8 @@ tiers + the hackathon voucher. Verified Jun 2026 (cloud prices move; confidence 
 |---|---|---|---|
 | Qwen API (`qwen-max`/`qwen-plus`) | **$0** — 1M free tokens *per model*, 90d, **intl endpoint only**; + $40 voucher | ~$1–3 for the whole build | HIGH |
 | ECS (backend) | **$0** — new-user free trial (1c/1GB, 12 mo) | ~$3.50–15 / mo | HIGH / MED |
-| ApsaraDB MongoDB | **$0** — 1-month free trial covers the demo window | **~$30–55 / mo** ⚠️ | LOW (console-gated) |
-| **Out of pocket** | **≈ $0** (only a ~$1 refundable card-verification hold) | **≈ $30–55** | — |
+| ApsaraDB MongoDB (managed) | **$0** — 1-month free trial *or* self-host Mongo on free ECS | **~$200 / mo** ⚠️ | **VERIFIED** in-console |
+| **Out of pocket** | **≈ $0** (only a ~$1 refundable card-verification hold) | **~$200/mo** *only if* paying for managed ApsaraDB | — |
 
 **Account note:** creating the Alibaba Cloud account is free but **requires a payment method**
 (card/PayPal) + a ~$1 hold that is refunded. No upfront ID verification for international use.
@@ -56,12 +58,22 @@ tiers + the hackathon voucher. Verified Jun 2026 (cloud prices move; confidence 
 4. Use the **international / Singapore endpoint** — the 1M free token quota does **not** exist on the Global (US-Virginia) endpoint.
 5. **Release every instance** the moment the demo is recorded.
 
-**Biggest cost driver:** ApsaraDB MongoDB *managed compute* (~$30–55/mo, unverified). The
-1-month free trial removes it for the demo window. Last-resort fallback if the trial is
-unavailable: self-host MongoDB Community on the free ECS box (loses the cleaner ApsaraDB proof).
+**Biggest cost driver:** ApsaraDB MongoDB *managed compute*. **Verified in-console (2026-06-27):**
+the smallest **dedicated** replica set (2 vCPU / 8 GB, 3-node, 20 GB storage) is **≈ $200/month**,
+billed monthly — *not* the ~$30 first estimated. (The buy page's default $294 is a 4-core preset;
+2-core drops it to ~$200.) This never hits you for the hackathon — use the free trial or the route below.
 
-**Could not verify (do not bank on):** exact ApsaraDB compute price · whether the $40 covers
-ECS/ApsaraDB or API-only · headline new-user credit amount (sources span $300–$1,700).
+**The free route — you never need to pay for ApsaraDB.** The judged requirement is "backend on
+Alibaba Cloud + a code file using an Alibaba API." **DashScope (Qwen) is itself an Alibaba API**,
+so ECS (free trial) + DashScope already satisfy the proof. For the database, either:
+- **Self-host MongoDB Community on the free ECS box** → $0, no managed-DB fee at all; or
+- Use the **ApsaraDB 1-month free trial** → $0, with nicer "managed Alibaba service" optics.
+
+The ~$200/mo applies only to a *paid, long-running, managed dedicated* instance — which a hackathon
+never needs.
+
+**Still unverified (do not bank on):** whether the $40 voucher covers ECS/ApsaraDB or API-only ·
+headline new-user credit amount (sources span $300–$1,700).
 
 ---
 
@@ -95,6 +107,11 @@ no lock-in. Build on reclabs3; ship the final live demo to ECS and record it the
 The agent calls `qwen-max` through the DashScope **international**, OpenAI-compatible endpoint
 (`https://dashscope-intl.aliyuncs.com/compatible-mode/v1`, hard-coded in `config.py`). Required
 by the hackathon (Qwen-on-Qwen-Cloud is a hard rule).
+
+> ✅ **Opened 2026-06-27.** A Singapore Model Studio workspace key (`sk-ws-…`) is live in
+> `secret/.env` and `qwen-max -> OK`. Two gotchas confirmed: (1) the workspace key works with the
+> *generic* `dashscope-intl` endpoint above — no per-workspace URL needed; (2) create the key in
+> the **Singapore** region — the free 1M-token quota is Singapore-only and keys are per-region.
 
 **Open it:**
 1. Create an Alibaba Cloud / Model Studio (DashScope) account on the **international** site.
@@ -148,6 +165,25 @@ PYTHONPATH=src .venv/bin/python scripts/check_mongo.py
 This pings the server (connectivity) and lists the target DB's collections (auth + DB access) —
 the same `ANAMNESIS_MONGODB_URI` + `ANAMNESIS_DB` that `agent/tools.py` uses. `0 collections` on a
 fresh instance is expected.
+
+### Local dev database (current setup)
+
+For development we run MongoDB on **reclabs3** (not paid ApsaraDB) and tunnel to it — $0, no
+free-trial clock:
+- Container `anamnesis-mongo` (MongoDB 8) at `/opt/anamnesis/mongo/` on reclabs3 — compose
+  `name: anamnesis`, volume `anamnesis_mongo_data`, bound **`127.0.0.1:27017`** (never exposed),
+  `restart: unless-stopped`. Root password lives in that dir's `.env` (VPS-side only).
+- The Mac reaches it over an SSH tunnel; `ANAMNESIS_MONGODB_URI` points at `127.0.0.1:27017`:
+  ```bash
+  ssh -fN -L 27017:127.0.0.1:27017 reclabs3        # restart after a Mac reboot/sleep
+  PYTHONPATH=src .venv/bin/python scripts/check_mongo.py   # expect: reachable -> OK
+  ```
+- Manage it: `ssh reclabs3 "cd /opt/anamnesis/mongo && docker compose ps"` (or `logs` / `restart` / `down`).
+- Reserved in `~/.ssh/vps-port-registry.md`.
+
+The **managed ApsaraDB** above is provisioned only for the judged demo deploy (free trial), where
+it doubles as the Alibaba-services proof. Dev → ApsaraDB is just an `ANAMNESIS_MONGODB_URI` swap —
+no code change.
 
 ---
 
