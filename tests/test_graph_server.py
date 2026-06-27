@@ -33,3 +33,13 @@ def test_binds_loopback_only(tmp_path):
         assert server.server_address[0] == "127.0.0.1"
     finally:
         server.server_close()
+
+
+def test_honors_custom_bind_host(tmp_path):
+    # A container sets host=0.0.0.0 so Docker can publish the port to the host's loopback
+    # (where nginx proxies it); the default stays loopback (test_binds_loopback_only).
+    server = make_graph_server(str(tmp_path), 0, host="0.0.0.0")
+    try:
+        assert server.server_address[0] == "0.0.0.0"
+    finally:
+        server.server_close()

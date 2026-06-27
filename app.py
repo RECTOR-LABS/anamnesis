@@ -32,9 +32,11 @@ def main() -> None:
     from qwen_agent.gui import WebUI
 
     # Serve rendered relationship graphs so the agent's cluster_graph links resolve.
-    server = make_graph_server(config.GRAPHS_DIR, config.GRAPHS_PORT)
+    server = make_graph_server(config.GRAPHS_DIR, config.GRAPHS_PORT, config.GRAPHS_HOST)
     Thread(target=server.serve_forever, daemon=True).start()
-    WebUI(build_agent(), chatbot_config=CHATBOT_CONFIG).run()
+    WebUI(build_agent(), chatbot_config=CHATBOT_CONFIG).run(
+        server_name=config.WEBUI_HOST, server_port=config.WEBUI_PORT,
+    )
 
 
 if __name__ == "__main__":

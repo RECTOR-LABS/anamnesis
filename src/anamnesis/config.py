@@ -45,3 +45,10 @@ def helius_rpc_url() -> str:
 GRAPHS_DIR = os.environ.get("ANAMNESIS_GRAPHS_DIR", "graphs")
 GRAPHS_PORT = int(os.environ.get("ANAMNESIS_GRAPHS_PORT", "7866"))
 GRAPHS_BASE_URL = os.environ.get("ANAMNESIS_GRAPHS_BASE_URL", f"http://localhost:{GRAPHS_PORT}")
+
+# Bind hosts for the WebUI (Gradio) and the graph static server. Default to loopback (the
+# served-port infra rule); a container sets these to 0.0.0.0 so Docker can publish the ports to
+# the host's 127.0.0.1, where nginx proxies them — the loopback boundary moves to host publishing.
+WEBUI_HOST = os.environ.get("ANAMNESIS_WEBUI_HOST", "127.0.0.1")
+WEBUI_PORT = int(os.environ.get("ANAMNESIS_WEBUI_PORT", "7860"))
+GRAPHS_HOST = os.environ.get("ANAMNESIS_GRAPHS_HOST", "127.0.0.1")
