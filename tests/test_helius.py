@@ -161,6 +161,24 @@ def test_oldest_signature_tolerates_entry_without_signature():
 
 
 @respx.mock
+def test_oldest_signature_is_bounded_and_returns_none_on_budget_exhaustion():
+    # "Infinite history": every page is full (== page_limit), so the scan never reaches a
+    # short/empty final page. The bound must stop it and return None — a partial 'oldest' would
+    # misidentify the creation tx (hence the deployer/funder), so honest unknown beats a wrong
+    # forensic claim. Guards against the multi-minute hang on established, high-activity mints.
+    pages = {"n": 0}
+
+    def _full_page(request: httpx.Request) -> httpx.Response:
+        pages["n"] += 1
+        return _json({"result": [{"signature": f"x{pages['n']}"}, {"signature": f"y{pages['n']}"}]})
+
+    route = respx.post(HELIUS_URL).mock(side_effect=_full_page)
+    with _client() as client:
+        assert client.oldest_signature("addr", page_limit=2, max_pages=3) is None
+    assert route.call_count == 3  # bounded — did not paginate forever
+
+
+@respx.mock
 def test_get_token_accounts_returns_total():
     respx.post(HELIUS_URL).mock(
         return_value=_json({"result": {"total": 1234, "token_accounts": []}})
@@ -344,6 +362,26 @@ class _NoDeployerClient(_FakeClient):
 def test_build_token_profile_allows_unknown_deployer():
     profile = build_token_profile(_NoDeployerClient(), "mintA")
     assert profile.deployer is None
+
+
+class _MegaCapClient(_FakeClient):
+    """A mega-cap mint: getTokenLargestAccounts exceeds the RPC account limit and raises."""
+
+    def get_token_largest_accounts(self, mint: str) -> list[dict]:
+        raise HeliusError(
+            "getTokenLargestAccounts failed: {'code': -32600, 'message': 'Too many accounts'}"
+        )
+
+
+def test_build_token_profile_degrades_concentration_when_largest_read_fails():
+    # A mega-cap's holder read raises; the profile must not crash. Concentration degrades to
+    # None (honest UNKNOWN — never a false 0% that reads as 'safe'); every other field stands.
+    profile = build_token_profile(_MegaCapClient(), "mintA")
+    assert profile.top_holder_pct is None
+    assert profile.deployer == "deployerW"
+    assert profile.mint_authority == "deployerW"
+    assert profile.holder_count == 742
+    assert profile.lp.status is LpStatus.UNKNOWN
 
 
 # --- A.8b: funding-source classification --------------------------------------------------

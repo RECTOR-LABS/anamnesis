@@ -38,6 +38,16 @@ def test_holder_concentration_threshold():
     assert any(s.code == "HOLDER_CONCENTRATION" for s in assess_token_signals(p))
 
 
+def test_unknown_holder_concentration_flags_low_unverified_not_medium():
+    # When the holder read failed (mega-cap), concentration is None -> honest 'unverified' low
+    # signal, mirroring LP_UNVERIFIED; never the medium HOLDER_CONCENTRATION (a false claim),
+    # and never a crash on the None comparison.
+    sigs = assess_token_signals(_profile(LpAssessment(LpStatus.SECURED), top_holder_pct=None))
+    conc = [s for s in sigs if s.code == "HOLDER_CONCENTRATION_UNVERIFIED"]
+    assert conc and conc[0].severity == "low"
+    assert not any(s.code == "HOLDER_CONCENTRATION" for s in sigs)
+
+
 def test_unknown_lp_flags_low_unverified_not_high():
     sigs = assess_token_signals(_profile(LpAssessment(LpStatus.UNKNOWN)))
     lp = [s for s in sigs if s.code == "LP_UNVERIFIED"]

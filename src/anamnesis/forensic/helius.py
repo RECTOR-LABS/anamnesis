@@ -61,6 +61,13 @@ class HeliusError(RuntimeError):
     """A JSON-RPC error payload returned by the Helius endpoint."""
 
 
+# Bound oldest_signature pagination: an address with an enormous signature history (an
+# established, high-activity token mint, or a busy funding wallet) would otherwise paginate for
+# minutes — a multi-minute hang on any well-known token. Past this many full pages we give up
+# and report 'unknown' rather than hang. Fresh pump.fun mints — the target case — finish in one.
+_OLDEST_SIGNATURE_MAX_PAGES = 20
+
+
 class HeliusClient:
     """Minimal Helius JSON-RPC client (DAS getAsset + standard token/tx RPC)."""
 
@@ -150,22 +157,34 @@ class HeliusClient:
             [signature, {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}],
         )
 
-    def oldest_signature(self, address: str, *, page_limit: int = 1000) -> str | None:
-        """The earliest signature for an address — for a mint, its creation tx."""
+    def oldest_signature(
+        self, address: str, *, page_limit: int = 1000,
+        max_pages: int = _OLDEST_SIGNATURE_MAX_PAGES,
+    ) -> str | None:
+        """The earliest signature for an address — for a mint, its creation tx.
+
+        Bounded to ``max_pages`` pages of history: an address with an enormous signature history
+        (an established, high-activity mint, or a busy funding wallet) would otherwise paginate
+        for minutes and hang the agent. When the budget is spent before the history is exhausted
+        this returns ``None`` — the true earliest tx was not reached, and returning a partial
+        'oldest' would misidentify the creation tx (and hence the deployer/funder); an honest
+        unknown beats a wrong forensic claim, and callers already treat None as unresolved.
+        Fresh mints finish in a single page.
+        """
         before: str | None = None
         oldest: str | None = None
-        while True:
+        for _ in range(max_pages):
             page = self.get_signatures_for_address(address, before=before, limit=page_limit)
             if not page:
-                break
+                return oldest  # history exhausted — oldest is the true earliest
             sig = page[-1].get("signature")
             if sig is None:  # malformed oldest entry — stop rather than KeyError
-                break
+                return oldest
             oldest = sig
             if len(page) < page_limit:
-                break
+                return oldest  # short final page — history exhausted
             before = oldest
-        return oldest
+        return None  # budget spent before reaching the creation tx — honest unknown
 
 
 def parse_authorities(asset: dict) -> tuple[str | None, str | None]:
@@ -364,7 +383,14 @@ def build_token_profile(
     info = asset.get("token_info") or {}
     supply = int(info.get("supply") or 0)
     mint_authority, freeze_authority = parse_authorities(asset)
-    largest = client.get_token_largest_accounts(mint)
+    try:
+        concentration: float | None = top_holder_pct(client.get_token_largest_accounts(mint), supply)
+    except HeliusError:
+        # A mega-cap mint's holder set exceeds the getTokenLargestAccounts RPC limit (and the
+        # read can fail other ways). Degrade to honest UNKNOWN — never a false 0% (which reads
+        # as 'safe') — mirroring get_token_supply's None and _lp_unanalyzed's UNKNOWN. The other
+        # grounded reads still stand, so the verdict is formed on what could be observed.
+        concentration = None
     deployer, created_at = resolve_origin(client, mint)
     return TokenProfile(
         mint=mint,
@@ -372,7 +398,7 @@ def build_token_profile(
         mint_authority=mint_authority,
         freeze_authority=freeze_authority,
         lp=lp_resolver(client, mint),
-        top_holder_pct=top_holder_pct(largest, supply),
+        top_holder_pct=concentration,
         holder_count=holder_count(client, mint),
         created_at=created_at,
     )
