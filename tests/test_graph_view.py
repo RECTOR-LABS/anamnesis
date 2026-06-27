@@ -53,6 +53,20 @@ def test_includes_generated_at_when_given():
     assert "2026-06-27T10:00:00Z" in html
 
 
+def test_render_escapes_script_breakout_in_inlined_data():
+    # A poisoned `remember` edge (or a hostile seed) must NOT break out of the <script>
+    # block. Memory-poisoning is this product's core threat model, so render-time escaping
+    # is the defense: the payload survives as data but cannot inject markup.
+    payload = "</script><script>alert(1)</script>"
+    g = ClusterGraph(seed=payload, nodes=(ClusterNode(payload, "wallet", ()),),
+                     edges=(), depth=1, truncated=False)
+    html = render_cluster_html(g)
+    assert payload not in html              # no raw </script> breakout in the document
+    assert "\\u003c/script" in html         # escaped to a JS unicode escape instead
+    # still valid JSON that decodes back to the real id (vis-network gets the true value)
+    assert any(d["id"] == payload for d in _dataset_payload(html, "nodes"))
+
+
 def _rugger_mem():
     m = ForensicMemory(InMemoryRepository())
 

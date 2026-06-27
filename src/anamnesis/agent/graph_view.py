@@ -78,6 +78,18 @@ def _default_heading(cluster: ClusterGraph) -> str:
             f"{len(cluster.edges)} relations, {rugged} prior rug(s), {watched} watchlisted{extra}")
 
 
+def _safe_json(obj) -> str:
+    """`json.dumps`, hardened for inlining inside a <script> block: escape the characters
+    that could terminate the element (`</script>`) or the JS string (the U+2028/U+2029 line
+    separators), so poisoned memory rendered into the page can never break out into
+    executable markup. The escapes are valid JSON, so the data round-trips intact."""
+    return (
+        json.dumps(obj)
+        .replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+        .replace(" ", "\\u2028").replace(" ", "\\u2029")
+    )
+
+
 def render_cluster_html(cluster: ClusterGraph, *, generated_at: str | None = None) -> str:
     heading = _default_heading(cluster)
     if generated_at:
@@ -93,8 +105,8 @@ def render_cluster_html(cluster: ClusterGraph, *, generated_at: str | None = Non
         _HTML_TEMPLATE
         .replace("__HEADING__", _html.escape(heading, quote=True))
         .replace("__VIS_CDN__", _VIS_CDN)
-        .replace("__NODES__", json.dumps(nodes))
-        .replace("__EDGES__", json.dumps(edges))
+        .replace("__NODES__", _safe_json(nodes))
+        .replace("__EDGES__", _safe_json(edges))
     )
 
 
