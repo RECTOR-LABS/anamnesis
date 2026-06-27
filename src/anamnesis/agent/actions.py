@@ -5,8 +5,10 @@ pure verdict pipeline (assess.py) is unchanged; this module performs the writes.
 """
 from __future__ import annotations
 
+from ..memory.alerts import AlertDraft, AlertStore
 from ..memory.graph import ForensicMemory
 from ..memory.models import Edge, Provenance, make_edge
+from ..risk import Verdict
 
 
 def watchlist_add(
@@ -27,3 +29,40 @@ def watchlist_add(
     )
     memory.remember([edge], now=now)
     return edge
+
+
+def _evidence_lines(verdict: Verdict) -> list[str]:
+    lines = [f"signal: {s.code} ({s.severity}) — {s.detail}" for s in verdict.cited_signals]
+    lines += [
+        f"memory: {e.type} {e.src}->{e.dst} (method={e.provenance.method})"
+        for e in verdict.remembered
+    ]
+    return lines
+
+
+def _render_message(deployer: str, mint: str, verdict: Verdict) -> str:
+    head = (
+        f"[{verdict.level.upper()}] rug-risk on mint {mint} "
+        f"(deployer {deployer}, score {verdict.score:.2f})"
+    )
+    ev = _evidence_lines(verdict)
+    if ev:
+        return head + "\n" + verdict.rationale + "\nEvidence:\n" + "\n".join(
+            f"  - {x}" for x in ev
+        )
+    return head + "\n" + verdict.rationale
+
+
+def draft_alert(
+    alerts: AlertStore, verdict: Verdict, deployer: str, mint: str, now: str
+) -> AlertDraft:
+    """Render a pending alert draft from a verdict and persist it (idempotent per
+    (deployer, mint) — the store returns the existing pending draft for a repeat pair).
+    Drafts are never auto-sent: a human reviews `list_pending_alerts` and decides."""
+    draft = AlertDraft(
+        id=f"alert:{deployer}->{mint}@{now}",
+        deployer=deployer, mint=mint, severity=verdict.level, score=round(verdict.score, 4),
+        rationale=verdict.rationale, evidence=_evidence_lines(verdict),
+        message=_render_message(deployer, mint, verdict), status="pending", created_at=now,
+    )
+    return alerts.add_draft(draft)
