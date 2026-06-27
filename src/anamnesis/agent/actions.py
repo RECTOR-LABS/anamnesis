@@ -103,3 +103,39 @@ def assess_and_act(
         except Exception as exc:  # keep the verdict; surface only the failure type
             result["error"] = f"act failed: {type(exc).__name__}"
     return result
+
+
+def list_pending_alerts(alerts: AlertStore) -> dict:
+    """The human-in-the-loop review surface: every pending (un-sent) alert draft."""
+    pending = alerts.list_pending()
+    return {"pending": [draft_to_dict(d) for d in pending], "count": len(pending)}
+
+
+def watchlist_mint(
+    memory: ForensicMemory, build_profile: Callable[[str], TokenProfile], mint: str, now: str
+) -> dict:
+    """Explicit watchlist: assess the mint and force-watchlist its deployer (no threshold),
+    carrying the derived risk score. A no-op with a note when the deployer is unresolved."""
+    profile = build_profile(mint)
+    if not profile.deployer:
+        return {"watchlisted": None, "note": "deployer unresolved; nothing to watchlist"}
+    verdict = assess_risk(profile, memory)
+    edge = watchlist_add(memory, profile.deployer, mint, verdict.score, now)
+    return {"watchlisted": {"deployer": profile.deployer, "mint": mint, "edge_id": edge.id}}
+
+
+def draft_for_mint(
+    memory: ForensicMemory,
+    alerts: AlertStore,
+    build_profile: Callable[[str], TokenProfile],
+    mint: str,
+    now: str,
+) -> dict:
+    """Explicit draft: assess the mint and draft a pending alert regardless of threshold.
+    A no-op with a note when the deployer is unresolved."""
+    profile = build_profile(mint)
+    if not profile.deployer:
+        return {"alert": None, "note": "deployer unresolved; cannot draft"}
+    verdict = assess_risk(profile, memory)
+    draft = draft_alert(alerts, verdict, profile.deployer, mint, now)
+    return {"alert": draft_to_dict(draft)}

@@ -1,4 +1,11 @@
-from anamnesis.agent.actions import assess_and_act, draft_alert, watchlist_add
+from anamnesis.agent.actions import (
+    assess_and_act,
+    draft_alert,
+    draft_for_mint,
+    list_pending_alerts,
+    watchlist_add,
+    watchlist_mint,
+)
 from anamnesis.forensic.signals import LpAssessment, LpStatus, Signal, TokenProfile
 from anamnesis.memory.alerts import InMemoryAlertStore
 from anamnesis.memory.graph import ForensicMemory
@@ -107,3 +114,31 @@ def test_assess_and_act_preserves_verdict_when_write_fails():
                          lambda m: _clean_profile("ruggerX"), "tokFresh", "2026-06-27")
     assert out["level"] == "high"          # verdict preserved despite the failed write
     assert out["acted"] is False and "error" in out
+
+
+def test_list_pending_alerts_returns_queue():
+    store = InMemoryAlertStore()
+    draft_alert(store, _verdict(), "dep", "mintZ", "2026-06-27")
+    out = list_pending_alerts(store)
+    assert out["count"] == 1
+    assert out["pending"][0]["mint"] == "mintZ" and out["pending"][0]["status"] == "pending"
+
+
+def test_watchlist_mint_forces_watchlist_even_when_low():
+    mem = ForensicMemory(InMemoryRepository())
+    out = watchlist_mint(mem, lambda m: _clean_profile("freshWallet", "m"), "m", "2026-06-27")
+    assert out["watchlisted"]["deployer"] == "freshWallet"
+    assert [e for e in mem.recall("freshWallet") if e.type == "WATCHLISTED"]
+
+
+def test_watchlist_mint_unresolved_deployer_is_a_noop():
+    mem = ForensicMemory(InMemoryRepository())
+    out = watchlist_mint(mem, lambda m: _clean_profile(None, "m"), "m", "2026-06-27")
+    assert out["watchlisted"] is None and "note" in out
+
+
+def test_draft_for_mint_drafts_regardless_of_threshold():
+    mem, store = ForensicMemory(InMemoryRepository()), InMemoryAlertStore()
+    out = draft_for_mint(mem, store, lambda m: _clean_profile("freshWallet", "m"), "m", "2026-06-27")
+    assert out["alert"]["mint"] == "m" and out["alert"]["status"] == "pending"
+    assert len(store.list_pending()) == 1
