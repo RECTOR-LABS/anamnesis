@@ -25,6 +25,12 @@ def test_all_three_tools_register():
         assert name in TOOL_REGISTRY
 
 
+def test_acts_tools_are_registered():
+    # B.1: the acting tools register alongside the read tools (assess_risk auto-acts).
+    for name in ("watchlist_add", "draft_alert", "list_pending_alerts"):
+        assert name in TOOL_REGISTRY
+
+
 def test_tool_parameter_schemas_name_their_required_args():
     assert TOOL_REGISTRY["recall"]().parameters[0]["name"] == "entity_key"
     assert TOOL_REGISTRY["remember"]().parameters[0]["name"] == "facts"

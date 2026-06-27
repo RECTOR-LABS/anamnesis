@@ -21,7 +21,7 @@ class Provenance:
 @dataclass
 class Edge:
     id: str
-    type: str  # DEPLOYED | FUNDED_BY | PROVIDES_LP | SAME_CLUSTER | RUGGED
+    type: str  # DEPLOYED | FUNDED_BY | PROVIDES_LP | SAME_CLUSTER | RUGGED | WATCHLISTED
     src: str
     dst: str
     valid_from: str

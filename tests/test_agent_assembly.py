@@ -47,7 +47,8 @@ def test_build_function_list_spawns_under_this_interpreter_then_native_tools():
     # unlisted vars, so it cannot be inherited); it must never travel via argv.
     assert block["env"] == {"ANAMNESIS_HELIUS_API_KEY": "dummy-helius-key"}
     assert "dummy-helius-key" not in arg
-    assert fl[1:] == ["recall", "remember", "assess_risk"]
+    assert fl[1:] == ["recall", "remember", "assess_risk", "watchlist_add", "draft_alert",
+                      "list_pending_alerts"]
 
 
 def test_build_agent_missing_dashscope_key_raises_actionable_error(monkeypatch):
