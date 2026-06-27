@@ -24,3 +24,12 @@ def test_creates_missing_directory(tmp_path):
         assert target.is_dir()
     finally:
         server.server_close()
+
+
+def test_binds_loopback_only(tmp_path):
+    # Infra rule: served ports bind to 127.0.0.1, never 0.0.0.0 (no LAN/ECS exposure).
+    server = make_graph_server(str(tmp_path), 0)
+    try:
+        assert server.server_address[0] == "127.0.0.1"
+    finally:
+        server.server_close()

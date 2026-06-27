@@ -16,8 +16,9 @@ def make_graph_server(directory: str, port: int) -> ThreadingHTTPServer:
 
     The directory is created if absent so the server binds cleanly before any graph is
     written. Call `.serve_forever()` (typically in a daemon thread) to run it; pass port=0
-    for an OS-assigned port (used in tests).
+    for an OS-assigned port (used in tests). Binds 127.0.0.1 only (never 0.0.0.0): the
+    rendered graphs are served behind the host's reverse proxy, never directly on the LAN.
     """
     os.makedirs(directory, exist_ok=True)
     handler = functools.partial(SimpleHTTPRequestHandler, directory=directory)
-    return ThreadingHTTPServer(("", port), handler)
+    return ThreadingHTTPServer(("127.0.0.1", port), handler)
