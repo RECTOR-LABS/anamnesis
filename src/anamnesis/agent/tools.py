@@ -18,8 +18,8 @@ from ..forensic.lp import LpAnalyzer
 from ..forensic.pools import DexScreenerClient
 from ..forensic.signals import TokenProfile
 from ..memory.graph import ForensicMemory
-from ..memory.models import Edge, Provenance, make_edge
-from ..risk import Verdict
+from ..memory.models import Provenance, make_edge
+from .serialize import edge_to_dict, verdict_to_dict
 
 # Provenance source recorded for a model-supplied claim that names none.
 CLAIMED_SOURCE = "agent:claimed"
@@ -32,38 +32,11 @@ def _clamp01(x: object) -> float:
         return 0.0
 
 
-def _edge_to_dict(e: Edge) -> dict:
-    return {
-        "type": e.type,
-        "src": e.src,
-        "dst": e.dst,
-        "method": e.provenance.method,
-        "source": e.provenance.source,
-        "confidence": e.provenance.confidence,
-        "recorded_at": e.recorded_at,
-        "valid_from": e.valid_from,
-        "valid_to": e.valid_to,
-        "superseded_at": e.superseded_at,
-    }
-
-
-def _verdict_to_dict(v: Verdict) -> dict:
-    return {
-        "level": v.level,
-        "score": round(v.score, 4),
-        "rationale": v.rationale,
-        "signals": [
-            {"code": s.code, "severity": s.severity, "detail": s.detail} for s in v.cited_signals
-        ],
-        "remembered": [_edge_to_dict(e) for e in v.remembered],
-    }
-
-
 def recall_handler(memory: ForensicMemory, entity_key: str, as_of: str | None = None) -> dict:
     """Return everything remembered about a wallet/token (current view, or as-of a past
     transaction time) as a JSON-able dict — the agent's "what do I already know" step."""
     edges = memory.recall(entity_key, as_of)
-    return {"entity": entity_key, "as_of": as_of, "edges": [_edge_to_dict(e) for e in edges]}
+    return {"entity": entity_key, "as_of": as_of, "edges": [edge_to_dict(e) for e in edges]}
 
 
 def remember_handler(memory: ForensicMemory, facts: list[dict], now: str) -> dict:
@@ -118,7 +91,7 @@ def assess_risk_handler(
     is flagged HIGH on memory alone."""
     profile = build_profile(mint)
     verdict = assess_risk(profile, memory, as_of=as_of)
-    return _verdict_to_dict(verdict)
+    return verdict_to_dict(verdict)
 
 
 def build_lp_aware_profile(helius, dex, mint: str) -> TokenProfile:
