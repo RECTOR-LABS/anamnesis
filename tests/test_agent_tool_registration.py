@@ -31,6 +31,11 @@ def test_acts_tools_are_registered():
         assert name in TOOL_REGISTRY
 
 
+def test_cluster_graph_tool_is_registered():
+    # B.2: the relationship-graph view tool.
+    assert "cluster_graph" in TOOL_REGISTRY
+
+
 def test_tool_parameter_schemas_name_their_required_args():
     assert TOOL_REGISTRY["recall"]().parameters[0]["name"] == "entity_key"
     assert TOOL_REGISTRY["remember"]().parameters[0]["name"] == "facts"

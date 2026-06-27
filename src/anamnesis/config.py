@@ -38,3 +38,10 @@ def helius_rpc_url() -> str:
     ANAMNESIS_HELIUS_API_KEY and must never be logged.
     """
     return f"https://mainnet.helius-rpc.com/?api-key={require('ANAMNESIS_HELIUS_API_KEY')}"
+
+
+# Relationship-graph view (B.2). Where rendered cluster HTML is written, and the base URL the
+# agent links to (a minimal static server over GRAPHS_DIR is launched by app.py).
+GRAPHS_DIR = os.environ.get("ANAMNESIS_GRAPHS_DIR", "graphs")
+GRAPHS_PORT = int(os.environ.get("ANAMNESIS_GRAPHS_PORT", "7866"))
+GRAPHS_BASE_URL = os.environ.get("ANAMNESIS_GRAPHS_BASE_URL", f"http://localhost:{GRAPHS_PORT}")
