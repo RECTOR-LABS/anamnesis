@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 720" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8b949e"/>
+    </marker>
+    <style>
+      .box   { fill:#161b22; stroke:#30363d; stroke-width:1.5; }
+      .h     { fill:#e6edf3; font-weight:700; }
+      .sub   { fill:#8b949e; }
+      .mono  { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; fill:#adbac7; }
+      .edge  { stroke:#8b949e; stroke-width:1.6; fill:none; marker-end:url(#arrow); }
+    </style>
+  </defs>
+
+  <!-- backdrop -->
+  <rect x="0" y="0" width="980" height="720" rx="14" fill="#0d1117"/>
+
+  <!-- title -->
+  <text x="490" y="44" text-anchor="middle" class="h" font-size="27">Anamnesis</text>
+  <text x="490" y="70" text-anchor="middle" class="sub" font-size="14">Solana pre-trade forensic agent · compounding bi-temporal memory</text>
+
+  <!-- thesis ribbon -->
+  <rect x="96" y="90" width="788" height="44" rx="10" fill="#161b22" stroke="#f0883e" stroke-width="1.5"/>
+  <text x="490" y="117" text-anchor="middle" font-size="13.5">
+    <tspan fill="#f0883e" font-weight="700">Memory is the edge:</tspan><tspan fill="#e6edf3" dx="4">a remembered serial rugger's brand-new, clean token → flagged HIGH on sight · ~1,400× faster than cold</tspan>
+  </text>
+
+  <!-- input -->
+  <rect x="385" y="150" width="210" height="42" rx="10" class="box"/>
+  <text x="490" y="176" text-anchor="middle" class="h" font-size="14">Paste a token mint</text>
+  <path class="edge" d="M490,192 L490,210"/>
+
+  <!-- agent orchestrator -->
+  <rect x="235" y="212" width="510" height="70" rx="12" fill="#1c1430" stroke="#a371f7" stroke-width="1.8"/>
+  <text x="490" y="240" text-anchor="middle" class="h" font-size="17">Qwen-Agent orchestrator</text>
+  <text x="490" y="261" text-anchor="middle" font-size="12.5"><tspan fill="#bc8cff" font-weight="600">qwen-max</tspan><tspan class="sub" dx="4">· DashScope-intl · Alibaba Cloud</tspan></text>
+  <text x="490" y="276" text-anchor="middle" class="sub" font-size="11.5">memory-first: recall → investigate → fuse → cite</text>
+
+  <!-- branches to the two tool families -->
+  <path class="edge" d="M360,282 C360,300 280,300 280,316"/>
+  <path class="edge" d="M620,282 C620,300 700,300 700,316"/>
+
+  <!-- native memory tools -->
+  <rect x="80" y="318" width="400" height="130" rx="12" class="box"/>
+  <text x="100" y="344" class="h" font-size="15">Native memory tools</text>
+  <text x="100" y="346" font-size="12.5">
+    <tspan class="mono" x="100" dy="24">recall · remember · assess_risk</tspan>
+    <tspan class="mono" x="100" dy="22">watchlist_add · draft_alert</tspan>
+    <tspan class="mono" x="100" dy="22">cluster_graph</tspan>
+  </text>
+  <text x="100" y="438" class="sub" font-size="11">verdict fuses live signals + remembered history</text>
+
+  <!-- mcp forensic server -->
+  <rect x="500" y="318" width="400" height="130" rx="12" class="box"/>
+  <text x="520" y="344" class="h" font-size="15">MCP forensic server <tspan class="sub" font-size="12" font-weight="400">· stdio child</tspan></text>
+  <text x="520" y="346" font-size="12.5">
+    <tspan class="mono" x="520" dy="24">get_token_profile · get_deployer</tspan>
+    <tspan class="mono" x="520" dy="22">get_holders · trace_funding</tspan>
+    <tspan class="mono" x="520" dy="22">get_deployer_token_history</tspan>
+  </text>
+  <text x="520" y="438" class="sub" font-size="11">spawned under the agent; key passed via env, never argv</text>
+
+  <path class="edge" d="M280,448 L280,474"/>
+  <path class="edge" d="M700,448 L700,474"/>
+
+  <!-- grounding: memory -->
+  <rect x="80" y="476" width="400" height="84" rx="12" fill="#0f2417" stroke="#3fb950" stroke-width="1.8"/>
+  <text x="280" y="505" text-anchor="middle" class="h" font-size="15.5">Bi-temporal memory</text>
+  <text x="280" y="526" text-anchor="middle" font-size="12.5"><tspan fill="#56d364" font-weight="600">MongoDB / ApsaraDB</tspan></text>
+  <text x="280" y="544" text-anchor="middle" class="sub" font-size="11.5">provenance-weighted trust · poisoning-hardened</text>
+
+  <!-- grounding: helius -->
+  <rect x="500" y="476" width="400" height="84" rx="12" fill="#0d1f33" stroke="#58a6ff" stroke-width="1.8"/>
+  <text x="700" y="505" text-anchor="middle" class="h" font-size="15.5">Helius — Solana mainnet</text>
+  <text x="700" y="526" text-anchor="middle" font-size="12.5"><tspan fill="#79c0ff" font-weight="600">grounded first-party reads</tspan></text>
+  <text x="700" y="544" text-anchor="middle" class="sub" font-size="11.5">authorities · LP · holders · funding · deploy history</text>
+
+  <!-- converge to verdict -->
+  <path class="edge" d="M280,560 C280,582 460,582 460,602"/>
+  <path class="edge" d="M700,560 C700,582 520,582 520,602"/>
+
+  <!-- verdict -->
+  <rect x="235" y="604" width="510" height="74" rx="12" fill="#2a1a0d" stroke="#f0883e" stroke-width="1.8"/>
+  <text x="490" y="632" text-anchor="middle" class="h" font-size="16">Verdict — memory-fused</text>
+  <text x="490" y="654" text-anchor="middle" font-size="12.5"><tspan fill="#f0883e" font-weight="600">HIGH from memory alone</tspan><tspan class="sub" dx="4">· cited evidence · auto-watchlist + alert · interactive cluster graph</tspan></text>
+</svg>
