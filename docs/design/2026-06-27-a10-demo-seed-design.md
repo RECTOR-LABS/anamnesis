@@ -63,10 +63,12 @@ For each prior-rug mint `R`, via `ForensicMemory.remember([...], now)`:
 fixed-constant `recorded_at`, re-running upserts the same ids → no duplicates. Safe to re-run before
 each take.
 
-**Reset (opt-in):** default is upsert-only. `--reset` clears the memory + alerts collections of the
-configured DB first (for a pristine cluster graph — e.g. removing the watchlist edge an earlier USDC
-smoke wrote). Guarded: refuses if the DB name looks production-like (reuse the MongoRepository
-prod-wipe guard), only the project's own collections, only on explicit flag.
+**Reset (opt-in, two-step):** default is upsert-only. `--reset` *previews* the destructive action —
+it prints the target DB + host + current counts and exits non-zero; only `--reset --force` actually
+clears the `relations` + `alert_drafts` collections (never drops the DB, never touches any other
+collection). The safety is this explicit, target-visible confirmation, **not** a DB-name blocklist:
+dev and the deployed instance share the DB name `anamnesis` (config default), so a name guard cannot
+tell them apart and only gives false confidence (caught in review).
 
 Target DB is whatever `ANAMNESIS_MONGODB_URI` points at — dev Mongo now, Alibaba at deploy time.
 

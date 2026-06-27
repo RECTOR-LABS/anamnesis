@@ -78,24 +78,25 @@ def build_seed_edges(deployer: str, rugs: list[RugSeed]) -> list[Edge]:
     return edges
 
 
-_PRODLIKE = ("prod", "mainnet", "live")
-
-
-def assert_resettable(db_name: str) -> None:
-    """Guard --reset: refuse to clear a database whose name looks production-like. The demo/dev
-    db (default 'anamnesis') is fine; anything carrying prod/mainnet/live is not."""
-    low = db_name.lower()
-    if any(tok in low for tok in _PRODLIKE):
-        raise SystemExit(
-            f"--reset refused: database {db_name!r} looks production-like. Point "
-            "ANAMNESIS_MONGODB_URI/ANAMNESIS_DB at the demo db, or clear it manually."
-        )
+def collection_counts(client, db_name: str) -> dict:
+    """Current document counts in the two collections this seed touches — shown before a
+    destructive --reset so the operator sees exactly what (and how much) is at stake."""
+    db = client[db_name]
+    return {
+        RELATIONS_COLLECTION: db[RELATIONS_COLLECTION].count_documents({}),
+        ALERTS_COLLECTION: db[ALERTS_COLLECTION].count_documents({}),
+    }
 
 
 def reset_collections(client, db_name: str) -> dict:
-    """Clear ONLY the project's two collections (relations, alert_drafts) in db_name, after the
-    guard. Returns the deleted counts. Never drops the database."""
-    assert_resettable(db_name)
+    """Clear ONLY relations + alert_drafts in db_name; never drops the database, never touches
+    any other collection. Returns the deleted counts.
+
+    Deliberately NOT name-guarded: dev and the deployed instance share the db name 'anamnesis'
+    (config default), so a name blocklist cannot tell them apart and only gives false
+    confidence. The real safety lives in the caller (main): --reset is a dry run that prints the
+    target db + host + counts, and only --reset --force actually clears — an explicit,
+    target-visible confirmation rather than a guess at the db's identity."""
     db = client[db_name]
     return {
         RELATIONS_COLLECTION: db[RELATIONS_COLLECTION].delete_many({}).deleted_count,
@@ -147,7 +148,9 @@ def _now_iso() -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Seed the Anamnesis demo memory (A.10).")
     parser.add_argument("--reset", action="store_true",
-                        help="clear the demo collections before seeding (guarded)")
+                        help="clear the demo collections before seeding (dry run unless --force)")
+    parser.add_argument("--force", action="store_true",
+                        help="with --reset: actually clear (without it, --reset only previews)")
     parser.add_argument("--metric", action="store_true",
                         help="measure + print the memory-vs-cold N× speedup, then exit")
     args = parser.parse_args(argv)
@@ -172,7 +175,16 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.reset:
-        print(f"reset {db_name}: cleared {reset_collections(client, db_name)}")
+        counts = collection_counts(client, db_name)  # also forces the connection -> client.address
+        addr = client.address  # (host, port) — never credentials
+        target = f"{db_name!r} @ {addr[0]}:{addr[1]}" if addr else f"{db_name!r}"
+        if not args.force:
+            print(f"--reset DRY RUN — would clear {counts} from {target}.")
+            print("This DESTROYS accumulated first-party memory + the pending-alert queue. "
+                  "Confirm the db+host above, then re-run with --reset --force.")
+            return 2
+        print(f"--reset --force: clearing {target} (was {counts})")
+        print(f"cleared {reset_collections(client, db_name)}")
 
     edges = build_seed_edges(DEPLOYER, PRIOR_RUGS)
     memory.remember(edges, now=_now_iso())

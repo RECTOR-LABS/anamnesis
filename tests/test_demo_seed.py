@@ -9,8 +9,9 @@ from anamnesis.demo_seed import (
     DEPLOYER,
     PRIOR_RUGS,
     RugSeed,
-    assert_resettable,
     build_seed_edges,
+    collection_counts,
+    reset_collections,
 )
 from anamnesis.memory.graph import ForensicMemory
 from anamnesis.memory.mongo_store import MongoRepository
@@ -65,18 +66,27 @@ def test_seed_is_idempotent():
 
 
 def test_shipped_constants_reach_high():
-    # Guard the actual demo payload: the committed DEPLOYER/PRIOR_RUGS must themselves hit HIGH,
+    # Guard the actual demo payload: the committed DEPLOYER/PRIOR_RUGS must hit HIGH DECISIVELY
+    # (3 rugs -> 0.85), so trimming PRIOR_RUGS to 2 (0.72) is caught here, not in the live demo;
     # and the live demo mint must not be one of the seeded rugs (it is discovered live).
     mem = _mongo_memory()
     mem.remember(build_seed_edges(DEPLOYER, PRIOR_RUGS), now="2026-06-27")
-    assert mem.trust_weighted_risk(mem.recall_deployer_history(DEPLOYER)) >= 0.6
-    assert len(PRIOR_RUGS) >= 2
+    assert mem.trust_weighted_risk(mem.recall_deployer_history(DEPLOYER)) >= 0.8
+    assert len(PRIOR_RUGS) >= 3
     assert DEMO_MINT not in {r.mint for r in PRIOR_RUGS}
 
 
-def test_reset_guard_allows_demo_db_refuses_prodlike():
-    assert_resettable("anamnesis")        # the demo/dev db — allowed (no raise)
-    assert_resettable("anamnesis_test")
-    for bad in ("anamnesis_prod", "production", "prod", "mainnet_memory", "live_db"):
-        with pytest.raises(SystemExit):
-            assert_resettable(bad)
+def test_reset_clears_only_its_two_collections_and_spares_bystanders():
+    # --reset's blast radius must be exactly relations + alert_drafts: never another collection,
+    # never the whole database. (The dry-run/--force confirmation gate itself lives in main.)
+    mongomock = pytest.importorskip("mongomock")
+    client = mongomock.MongoClient()
+    db = client["anamnesis_test"]
+    db["relations"].insert_many([{"id": "r1"}, {"id": "r2"}])
+    db["alert_drafts"].insert_one({"id": "a1"})
+    db["bystander"].insert_one({"id": "keep-me"})  # an unrelated collection must survive
+
+    assert collection_counts(client, "anamnesis_test") == {"relations": 2, "alert_drafts": 1}
+    assert reset_collections(client, "anamnesis_test") == {"relations": 2, "alert_drafts": 1}
+    assert collection_counts(client, "anamnesis_test") == {"relations": 0, "alert_drafts": 0}
+    assert db["bystander"].count_documents({}) == 1  # bystander untouched; db not dropped
