@@ -21,10 +21,19 @@ def watchlist_add(
 ) -> Edge:
     """Record the deployer on the watchlist (a WATCHLISTED edge, deployer -> triggering mint).
 
+    Idempotent per (deployer, mint): a standing watchlist entry is kept rather than re-written.
+    `remember`'s bi-temporal supersession retires a prior belief only when the new one is of
+    equal-or-higher trust, so a decreasing-but-still-HIGH re-assessment would otherwise leave a
+    second active edge for the same pair; returning the existing entry keeps recall clean (one
+    edge per pair, any score direction) — mirroring the alert store's pending-draft idempotency.
+
     Provenance is `derived` (this is inferred from the verdict, not a first-party on-chain
     observation) — and WATCHLISTED is not a scored type, so a watchlist entry is recall-able
     but can never inflate a future verdict (no feedback loop).
     """
+    for e in memory.recall(deployer):
+        if e.type == "WATCHLISTED" and e.dst == mint:
+            return e  # already watchlisted; keep the standing entry (no churn, no duplicate)
     edge = make_edge(
         "WATCHLISTED", deployer, mint,
         valid_from=now, recorded_at=now,

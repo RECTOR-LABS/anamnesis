@@ -36,7 +36,19 @@ def test_watchlist_re_add_supersedes_not_duplicates():
     watchlist_add(mem, "dep", "mintZ", 0.7, "2026-06-27")
     watchlist_add(mem, "dep", "mintZ", 0.9, "2026-06-28")
     current = [e for e in mem.recall("dep") if e.type == "WATCHLISTED" and e.dst == "mintZ"]
-    assert len(current) == 1  # higher-trust re-add supersedes the prior; no duplicate
+    assert len(current) == 1  # re-add is idempotent per (deployer, mint); no duplicate
+
+
+def test_watchlist_re_add_decreasing_score_still_no_duplicate():
+    # The standing entry is kept regardless of score direction. A decreasing-but-still-HIGH
+    # re-assessment would slip past trust-based supersession (lower trust never retires the
+    # prior), so idempotency — not supersession — is what keeps recall to one edge per pair.
+    mem = ForensicMemory(InMemoryRepository())
+    first = watchlist_add(mem, "dep", "mintZ", 0.95, "2026-06-27")
+    again = watchlist_add(mem, "dep", "mintZ", 0.65, "2026-06-28")
+    assert again.id == first.id  # same standing entry returned, not a new lower-trust edge
+    current = [e for e in mem.recall("dep") if e.type == "WATCHLISTED" and e.dst == "mintZ"]
+    assert len(current) == 1
 
 
 def _verdict():
