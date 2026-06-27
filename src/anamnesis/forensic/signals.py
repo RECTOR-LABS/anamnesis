@@ -43,7 +43,7 @@ class TokenProfile:
     mint_authority: str | None  # None == renounced (safe)
     freeze_authority: str | None  # None == renounced (safe)
     lp: LpAssessment  # tri-state LP securedness + per-pool evidence
-    top_holder_pct: float  # 0..100, largest non-LP holder
+    top_holder_pct: float | None  # 0..100, largest non-LP holder; None == unreadable (UNKNOWN)
     holder_count: int
     created_at: str | None = None
 
@@ -85,7 +85,13 @@ def assess_token_signals(p: TokenProfile) -> list[Signal]:
             "LP_UNVERIFIED", "low",
             "Liquidity securedness could not be verified across the mint's pools.",
         ))
-    if p.top_holder_pct >= HOLDER_CONCENTRATION_THRESHOLD:
+    if p.top_holder_pct is None:
+        out.append(Signal(
+            "HOLDER_CONCENTRATION_UNVERIFIED", "low",
+            "Holder concentration could not be read (e.g. the holder set exceeds the RPC "
+            "limit); treat as unknown, not safe.",
+        ))
+    elif p.top_holder_pct >= HOLDER_CONCENTRATION_THRESHOLD:
         out.append(Signal(
             "HOLDER_CONCENTRATION", "medium",
             f"Top holder owns {p.top_holder_pct:.1f}% (>= {HOLDER_CONCENTRATION_THRESHOLD:.0f}%).",

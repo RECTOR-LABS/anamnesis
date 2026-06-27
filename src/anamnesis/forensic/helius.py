@@ -364,7 +364,14 @@ def build_token_profile(
     info = asset.get("token_info") or {}
     supply = int(info.get("supply") or 0)
     mint_authority, freeze_authority = parse_authorities(asset)
-    largest = client.get_token_largest_accounts(mint)
+    try:
+        concentration: float | None = top_holder_pct(client.get_token_largest_accounts(mint), supply)
+    except HeliusError:
+        # A mega-cap mint's holder set exceeds the getTokenLargestAccounts RPC limit (and the
+        # read can fail other ways). Degrade to honest UNKNOWN — never a false 0% (which reads
+        # as 'safe') — mirroring get_token_supply's None and _lp_unanalyzed's UNKNOWN. The other
+        # grounded reads still stand, so the verdict is formed on what could be observed.
+        concentration = None
     deployer, created_at = resolve_origin(client, mint)
     return TokenProfile(
         mint=mint,
@@ -372,7 +379,7 @@ def build_token_profile(
         mint_authority=mint_authority,
         freeze_authority=freeze_authority,
         lp=lp_resolver(client, mint),
-        top_holder_pct=top_holder_pct(largest, supply),
+        top_holder_pct=concentration,
         holder_count=holder_count(client, mint),
         created_at=created_at,
     )

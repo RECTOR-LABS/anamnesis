@@ -346,6 +346,26 @@ def test_build_token_profile_allows_unknown_deployer():
     assert profile.deployer is None
 
 
+class _MegaCapClient(_FakeClient):
+    """A mega-cap mint: getTokenLargestAccounts exceeds the RPC account limit and raises."""
+
+    def get_token_largest_accounts(self, mint: str) -> list[dict]:
+        raise HeliusError(
+            "getTokenLargestAccounts failed: {'code': -32600, 'message': 'Too many accounts'}"
+        )
+
+
+def test_build_token_profile_degrades_concentration_when_largest_read_fails():
+    # A mega-cap's holder read raises; the profile must not crash. Concentration degrades to
+    # None (honest UNKNOWN — never a false 0% that reads as 'safe'); every other field stands.
+    profile = build_token_profile(_MegaCapClient(), "mintA")
+    assert profile.top_holder_pct is None
+    assert profile.deployer == "deployerW"
+    assert profile.mint_authority == "deployerW"
+    assert profile.holder_count == 742
+    assert profile.lp.status is LpStatus.UNKNOWN
+
+
 # --- A.8b: funding-source classification --------------------------------------------------
 
 
