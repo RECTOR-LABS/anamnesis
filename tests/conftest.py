@@ -67,3 +67,36 @@ def repo(request: pytest.FixtureRequest):
             client.drop_database(CONTRACT_DB)
         finally:
             client.close()  # always release the client, even if cleanup raised
+
+
+@pytest.fixture
+def alerts(request: pytest.FixtureRequest):
+    """A fresh, isolated AlertStore for the selected --store backend (mirrors `repo`)."""
+    from anamnesis.memory.alerts import InMemoryAlertStore
+
+    if request.config.getoption("--store") == "memory":
+        yield InMemoryAlertStore()
+        return
+
+    from anamnesis.memory.alerts import MongoAlertStore
+
+    if CONTRACT_DB == config.ANAMNESIS_DB:
+        raise RuntimeError(
+            f"contract DB {CONTRACT_DB!r} must differ from the production db "
+            "(config.ANAMNESIS_DB); refusing to run to avoid dropping real memory"
+        )
+    if uri := os.environ.get("ANAMNESIS_MONGODB_URI"):
+        from pymongo import MongoClient
+
+        client = MongoClient(uri, serverSelectionTimeoutMS=10000)
+    else:
+        mongomock = pytest.importorskip("mongomock")
+        client = mongomock.MongoClient()
+    try:
+        client.drop_database(CONTRACT_DB)
+        yield MongoAlertStore(client, CONTRACT_DB)
+    finally:
+        try:
+            client.drop_database(CONTRACT_DB)
+        finally:
+            client.close()

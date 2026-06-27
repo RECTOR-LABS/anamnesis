@@ -14,7 +14,8 @@ from .. import config
 # Native @register_tool tools (A.7), resolved by name from Qwen-Agent's TOOL_REGISTRY once
 # anamnesis.agent.tools is imported (build_agent triggers that import before constructing the
 # Assistant). Order is cosmetic — resolution is by name.
-NATIVE_TOOLS = ["recall", "remember", "assess_risk"]
+NATIVE_TOOLS = ["recall", "remember", "assess_risk", "watchlist_add", "draft_alert",
+                "list_pending_alerts"]
 
 
 def build_llm_cfg(api_key: str) -> dict:

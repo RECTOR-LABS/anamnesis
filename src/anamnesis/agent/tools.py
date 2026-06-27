@@ -18,8 +18,9 @@ from ..forensic.lp import LpAnalyzer
 from ..forensic.pools import DexScreenerClient
 from ..forensic.signals import TokenProfile
 from ..memory.graph import ForensicMemory
-from ..memory.models import Edge, Provenance, make_edge
-from ..risk import Verdict
+from ..memory.models import Provenance, make_edge
+from .actions import assess_and_act, draft_for_mint, list_pending_alerts, watchlist_mint
+from .serialize import edge_to_dict, verdict_to_dict
 
 # Provenance source recorded for a model-supplied claim that names none.
 CLAIMED_SOURCE = "agent:claimed"
@@ -32,38 +33,11 @@ def _clamp01(x: object) -> float:
         return 0.0
 
 
-def _edge_to_dict(e: Edge) -> dict:
-    return {
-        "type": e.type,
-        "src": e.src,
-        "dst": e.dst,
-        "method": e.provenance.method,
-        "source": e.provenance.source,
-        "confidence": e.provenance.confidence,
-        "recorded_at": e.recorded_at,
-        "valid_from": e.valid_from,
-        "valid_to": e.valid_to,
-        "superseded_at": e.superseded_at,
-    }
-
-
-def _verdict_to_dict(v: Verdict) -> dict:
-    return {
-        "level": v.level,
-        "score": round(v.score, 4),
-        "rationale": v.rationale,
-        "signals": [
-            {"code": s.code, "severity": s.severity, "detail": s.detail} for s in v.cited_signals
-        ],
-        "remembered": [_edge_to_dict(e) for e in v.remembered],
-    }
-
-
 def recall_handler(memory: ForensicMemory, entity_key: str, as_of: str | None = None) -> dict:
     """Return everything remembered about a wallet/token (current view, or as-of a past
     transaction time) as a JSON-able dict — the agent's "what do I already know" step."""
     edges = memory.recall(entity_key, as_of)
-    return {"entity": entity_key, "as_of": as_of, "edges": [_edge_to_dict(e) for e in edges]}
+    return {"entity": entity_key, "as_of": as_of, "edges": [edge_to_dict(e) for e in edges]}
 
 
 def remember_handler(memory: ForensicMemory, facts: list[dict], now: str) -> dict:
@@ -118,7 +92,7 @@ def assess_risk_handler(
     is flagged HIGH on memory alone."""
     profile = build_profile(mint)
     verdict = assess_risk(profile, memory, as_of=as_of)
-    return _verdict_to_dict(verdict)
+    return verdict_to_dict(verdict)
 
 
 def build_lp_aware_profile(helius, dex, mint: str) -> TokenProfile:
@@ -151,15 +125,31 @@ if register_tool is not None:  # pragma: no cover - requires qwen-agent + live s
     _memory_singleton: ForensicMemory | None = None
     _helius_singleton: HeliusClient | None = None
     _dex_singleton: DexScreenerClient | None = None
+    _client_singleton = None
+    _alerts_singleton = None
+
+    def _client():
+        # One Mongo client shared by memory + alerts, so both stores use a single connection.
+        global _client_singleton
+        if _client_singleton is None:
+            from pymongo import MongoClient
+
+            _client_singleton = MongoClient(config.require("ANAMNESIS_MONGODB_URI"))
+        return _client_singleton
 
     def _memory() -> ForensicMemory:
         global _memory_singleton
         if _memory_singleton is None:
-            from pymongo import MongoClient
-
-            client = MongoClient(config.require("ANAMNESIS_MONGODB_URI"))
-            _memory_singleton = ForensicMemory(MongoRepository(client, config.ANAMNESIS_DB))
+            _memory_singleton = ForensicMemory(MongoRepository(_client(), config.ANAMNESIS_DB))
         return _memory_singleton
+
+    def _alerts():
+        global _alerts_singleton
+        if _alerts_singleton is None:
+            from ..memory.alerts import MongoAlertStore
+
+            _alerts_singleton = MongoAlertStore(_client(), config.ANAMNESIS_DB)
+        return _alerts_singleton
 
     def _helius() -> HeliusClient:
         global _helius_singleton
@@ -218,7 +208,8 @@ if register_tool is not None:  # pragma: no cover - requires qwen-agent + live s
         description = (
             "Assess a token's rug risk by fusing live on-chain signals with the deployer's "
             "REMEMBERED prior-rug history. A clean-looking token from a known serial rugger "
-            "is flagged HIGH from memory alone."
+            "is flagged HIGH from memory alone. When risk is HIGH it auto-watchlists the "
+            "deployer and drafts a pending alert (never sent)."
         )
         parameters = [
             {"name": "mint", "type": "string", "required": True,
@@ -229,11 +220,45 @@ if register_tool is not None:  # pragma: no cover - requires qwen-agent + live s
 
         def call(self, params, **kwargs) -> str:
             a = _args(params)
-            return json.dumps(
-                assess_risk_handler(
-                    _memory(),
-                    lambda m: build_lp_aware_profile(_helius(), _dex(), m),
-                    a["mint"],
-                    as_of=a.get("as_of"),
-                )
-            )
+            return json.dumps(assess_and_act(
+                _memory(), _alerts(),
+                lambda m: build_lp_aware_profile(_helius(), _dex(), m),
+                a["mint"], _now(), as_of=a.get("as_of"),
+            ))
+
+    @register_tool("watchlist_add")
+    class WatchlistAddTool(BaseTool):
+        description = ("Watchlist a token's deployer so every FUTURE token they launch is "
+                       "flagged on sight. Records a provenance-tracked memory edge.")
+        parameters = [{"name": "mint", "type": "string", "required": True,
+                       "description": "The mint whose deployer to watchlist."}]
+
+        def call(self, params, **kwargs) -> str:
+            a = _args(params)
+            return json.dumps(watchlist_mint(
+                _memory(), lambda m: build_lp_aware_profile(_helius(), _dex(), m),
+                a["mint"], _now(),
+            ))
+
+    @register_tool("draft_alert")
+    class DraftAlertTool(BaseTool):
+        description = ("Draft a human-reviewable alert for a token (status=pending; never "
+                       "auto-sent). A human reviews and decides via list_pending_alerts.")
+        parameters = [{"name": "mint", "type": "string", "required": True,
+                       "description": "The mint to draft an alert for."}]
+
+        def call(self, params, **kwargs) -> str:
+            a = _args(params)
+            return json.dumps(draft_for_mint(
+                _memory(), _alerts(), lambda m: build_lp_aware_profile(_helius(), _dex(), m),
+                a["mint"], _now(),
+            ))
+
+    @register_tool("list_pending_alerts")
+    class ListPendingAlertsTool(BaseTool):
+        description = ("List all pending (un-sent) alert drafts the agent's memory has "
+                       "auto-drafted — the human-in-the-loop review queue.")
+        parameters = []
+
+        def call(self, params, **kwargs) -> str:
+            return json.dumps(list_pending_alerts(_alerts()))
