@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import html as _html
 import json
+import os
 
-from ..memory.cluster import ClusterGraph
+from ..memory.cluster import ClusterGraph, recall_cluster
+from ..memory.graph import ForensicMemory
 
 _VIS_CDN = "https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"
 
@@ -94,3 +96,46 @@ def render_cluster_html(cluster: ClusterGraph, *, generated_at: str | None = Non
         .replace("__NODES__", json.dumps(nodes))
         .replace("__EDGES__", json.dumps(edges))
     )
+
+
+def _filename(cluster: ClusterGraph) -> str:
+    def slug(s: str) -> str:
+        return "".join(c if c.isalnum() else "_" for c in s)[:24]
+
+    asof = f"_asof_{slug(cluster.as_of)}" if cluster.as_of else ""
+    return f"cluster_{slug(cluster.seed)}{asof}.html"
+
+
+def write_cluster_html(
+    cluster: ClusterGraph, out_dir: str, *, generated_at: str | None = None
+) -> str:
+    """Render the cluster and write it to `out_dir` under a deterministic filename
+    (re-rendering the same seed overwrites in place). Returns the absolute path."""
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, _filename(cluster))
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(render_cluster_html(cluster, generated_at=generated_at))
+    return os.path.abspath(path)
+
+
+def cluster_graph_handler(
+    memory: ForensicMemory, seed: str, now: str, *,
+    out_dir: str, base_url: str, depth: int = 2, as_of: str | None = None,
+) -> dict:
+    """Traverse memory around `seed`, render the interactive graph to a file, and return a
+    JSON-able summary + a clickable URL. Read-only: visualizes memory; no on-chain reads."""
+    cluster = recall_cluster(memory, seed, depth=depth, as_of=as_of)
+    path = write_cluster_html(cluster, out_dir, generated_at=now)
+    rugged = sorted(n.id for n in cluster.nodes if "rugged" in n.flags)
+    watchlisted = sorted(n.id for n in cluster.nodes if "watchlisted" in n.flags)
+    url = base_url.rstrip("/") + "/" + os.path.basename(path)
+    summary = (
+        f"Rendered a {len(cluster.nodes)}-entity / {len(cluster.edges)}-relation cluster "
+        f"around {seed}: {len(rugged)} prior rug(s), {len(watchlisted)} watchlisted"
+        + (" (truncated — refine the seed)" if cluster.truncated else "")
+    )
+    return {
+        "seed": seed, "node_count": len(cluster.nodes), "edge_count": len(cluster.edges),
+        "rugged": rugged, "watchlisted": watchlisted, "truncated": cluster.truncated,
+        "html_path": path, "url": url, "summary": summary,
+    }
