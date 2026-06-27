@@ -18,6 +18,11 @@ COPY scripts ./scripts
 COPY app.py ./
 RUN pip install --no-cache-dir -e .
 
+# Run as a non-root user (defense-in-depth, even behind nginx). /app is chowned so the editable
+# install resolves and the graphs dir (created at runtime via os.makedirs) is writable.
+RUN useradd --create-home --uid 10001 app && chown -R app:app /app
+USER app
+
 # Bind 0.0.0.0 INSIDE the container; docker-compose publishes only to the host's 127.0.0.1,
 # where nginx terminates TLS and proxies (the loopback boundary moves to host publishing).
 ENV ANAMNESIS_WEBUI_HOST=0.0.0.0 \

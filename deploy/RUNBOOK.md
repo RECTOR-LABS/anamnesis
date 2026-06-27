@@ -39,8 +39,10 @@ ssh root@<ecs-ip>            # or your sudo user
 
 # key-only SSH (Alibaba cloud-init can re-enable passwords via a drop-in — verify effective)
 sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
 sudo rm -f /etc/ssh/sshd_config.d/*cloud-init*.conf 2>/dev/null || true
-sudo systemctl restart ssh && sudo sshd -T | grep -i passwordauthentication   # -> no
+sudo systemctl restart ssh
+sudo sshd -T | grep -iE 'passwordauthentication|permitrootlogin'   # -> no / prohibit-password
 
 # firewall: only 22/80/443
 sudo apt-get update && sudo apt-get install -y ufw fail2ban
@@ -72,7 +74,7 @@ ANAMNESIS_DB=anamnesis
 QWEN_MODEL=qwen-max
 # self-hosted Mongo (compose creates this root user; the app URI is built from it)
 MONGO_USER=anamnesis
-MONGO_PASSWORD=<a strong password>
+MONGO_PASSWORD=<a strong ALPHANUMERIC password — @ : / # ? break the mongodb:// URI>
 # public URL for cluster-graph links (matches the nginx /graphs/ location)
 ANAMNESIS_GRAPHS_BASE_URL=https://anamnesis.<your-domain>/graphs
 ```
@@ -103,7 +105,9 @@ sudo apt-get install -y nginx certbot python3-certbot-nginx
 sudo cp deploy/nginx/anamnesis.conf /etc/nginx/sites-available/anamnesis
 sudo sed -i 's/ANAMNESIS_DOMAIN/anamnesis.<your-domain>/g' /etc/nginx/sites-available/anamnesis
 sudo ln -sf /etc/nginx/sites-available/anamnesis /etc/nginx/sites-enabled/anamnesis
-sudo nginx -t && sudo systemctl reload nginx
+sudo rm -f /etc/nginx/sites-enabled/default       # drop the distro default site
+sudo nginx -t && sudo systemctl reload nginx      # passes: the shipped config is plain HTTP
+# certbot clones the HTTP block into a TLS (443) vhost, installs the cert, and adds the redirect:
 sudo certbot --nginx -d anamnesis.<your-domain>   # provisions + auto-renews the cert
 ```
 
