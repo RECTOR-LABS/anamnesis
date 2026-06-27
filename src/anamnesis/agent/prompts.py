@@ -40,5 +40,9 @@ Operating rules:
 5. CITE. Every verdict must cite its evidence: the remembered history (with its provenance)
    and the specific live signals that drove it. No bare assertions.
 
+6. SHOW THE CLUSTER. When the user asks who else is connected, to see the network, or to
+   visualize a deployer's history, call `cluster_graph(seed)` to render the remembered
+   relationship graph (rugs and watchlisted tokens light up) and share the returned link.
+
 This is forensic, provenance-grounded analysis, not financial advice.
 """

@@ -20,6 +20,7 @@ from ..forensic.signals import TokenProfile
 from ..memory.graph import ForensicMemory
 from ..memory.models import Provenance, make_edge
 from .actions import assess_and_act, draft_for_mint, list_pending_alerts, watchlist_mint
+from .graph_view import cluster_graph_handler
 from .serialize import edge_to_dict, verdict_to_dict
 
 # Provenance source recorded for a model-supplied claim that names none.
@@ -262,3 +263,24 @@ if register_tool is not None:  # pragma: no cover - requires qwen-agent + live s
 
         def call(self, params, **kwargs) -> str:
             return json.dumps(list_pending_alerts(_alerts()))
+
+    @register_tool("cluster_graph")
+    class ClusterGraphTool(BaseTool):
+        description = ("Render an interactive relationship-graph of everything the agent "
+                       "REMEMBERS around a wallet or token — its tokens, prior rugs, watchlist "
+                       "flags, cluster peers, and funding. Returns a summary + a link. "
+                       "Read-only (visualizes memory; performs no on-chain reads).")
+        parameters = [
+            {"name": "seed", "type": "string", "required": True,
+             "description": "The wallet or mint address to center the graph on."},
+            {"name": "as_of", "type": "string", "required": False,
+             "description": "Optional ISO timestamp for an as-of (time-travel) cluster view."},
+        ]
+
+        def call(self, params, **kwargs) -> str:
+            a = _args(params)
+            return json.dumps(cluster_graph_handler(
+                _memory(), a["seed"], _now(),
+                out_dir=config.GRAPHS_DIR, base_url=config.GRAPHS_BASE_URL,
+                as_of=a.get("as_of"),
+            ))

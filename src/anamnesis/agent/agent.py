@@ -15,7 +15,7 @@ from .. import config
 # anamnesis.agent.tools is imported (build_agent triggers that import before constructing the
 # Assistant). Order is cosmetic — resolution is by name.
 NATIVE_TOOLS = ["recall", "remember", "assess_risk", "watchlist_add", "draft_alert",
-                "list_pending_alerts"]
+                "list_pending_alerts", "cluster_graph"]
 
 
 def build_llm_cfg(api_key: str) -> dict:
