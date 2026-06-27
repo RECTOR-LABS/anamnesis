@@ -9,14 +9,16 @@ Run locally:  python app.py   (needs ANAMNESIS_DASHSCOPE_API_KEY + ANAMNESIS_HEL
 from anamnesis import config
 from anamnesis.agent.agent import build_agent
 from anamnesis.agent.graph_server import make_graph_server
+from anamnesis.demo_seed import DEMO_MINT
 
-# Demo affordances for the judged WebUI. A.10 swaps the concrete seeded mint into the
-# suggestions; verbose surfaces the recall -> assess_risk -> MCP tool calls so the
+# Demo affordances for the judged WebUI. The first suggestion is the seeded demo mint (A.10),
+# so a judge is one click from the hero flow (its deployer is a remembered serial rugger ->
+# instant HIGH from memory); verbose surfaces the recall -> assess_risk -> MCP tool calls so the
 # memory-first, cite-the-evidence reasoning is visible during the demo.
 CHATBOT_CONFIG = {
     "prompt.suggestions": [
-        "Should I ape this token? Paste a mint address.",
-        "What do you already know about this deployer?",
+        f"Should I ape this token? {DEMO_MINT}",
+        "What do you already know about this deployer? Show me the cluster graph.",
         "Investigate this mint and cite the evidence behind your verdict.",
     ],
     "verbose": True,
