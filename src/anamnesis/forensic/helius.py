@@ -61,6 +61,13 @@ class HeliusError(RuntimeError):
     """A JSON-RPC error payload returned by the Helius endpoint."""
 
 
+# Bound oldest_signature pagination: an address with an enormous signature history (an
+# established, high-activity token mint, or a busy funding wallet) would otherwise paginate for
+# minutes — a multi-minute hang on any well-known token. Past this many full pages we give up
+# and report 'unknown' rather than hang. Fresh pump.fun mints — the target case — finish in one.
+_OLDEST_SIGNATURE_MAX_PAGES = 20
+
+
 class HeliusClient:
     """Minimal Helius JSON-RPC client (DAS getAsset + standard token/tx RPC)."""
 
@@ -150,22 +157,34 @@ class HeliusClient:
             [signature, {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}],
         )
 
-    def oldest_signature(self, address: str, *, page_limit: int = 1000) -> str | None:
-        """The earliest signature for an address — for a mint, its creation tx."""
+    def oldest_signature(
+        self, address: str, *, page_limit: int = 1000,
+        max_pages: int = _OLDEST_SIGNATURE_MAX_PAGES,
+    ) -> str | None:
+        """The earliest signature for an address — for a mint, its creation tx.
+
+        Bounded to ``max_pages`` pages of history: an address with an enormous signature history
+        (an established, high-activity mint, or a busy funding wallet) would otherwise paginate
+        for minutes and hang the agent. When the budget is spent before the history is exhausted
+        this returns ``None`` — the true earliest tx was not reached, and returning a partial
+        'oldest' would misidentify the creation tx (and hence the deployer/funder); an honest
+        unknown beats a wrong forensic claim, and callers already treat None as unresolved.
+        Fresh mints finish in a single page.
+        """
         before: str | None = None
         oldest: str | None = None
-        while True:
+        for _ in range(max_pages):
             page = self.get_signatures_for_address(address, before=before, limit=page_limit)
             if not page:
-                break
+                return oldest  # history exhausted — oldest is the true earliest
             sig = page[-1].get("signature")
             if sig is None:  # malformed oldest entry — stop rather than KeyError
-                break
+                return oldest
             oldest = sig
             if len(page) < page_limit:
-                break
+                return oldest  # short final page — history exhausted
             before = oldest
-        return oldest
+        return None  # budget spent before reaching the creation tx — honest unknown
 
 
 def parse_authorities(asset: dict) -> tuple[str | None, str | None]:
