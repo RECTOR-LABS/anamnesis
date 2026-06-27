@@ -30,3 +30,11 @@ def test_graphs_config_defaults_present():
     assert config.GRAPHS_DIR
     assert isinstance(config.GRAPHS_PORT, int) and config.GRAPHS_PORT > 0
     assert config.GRAPHS_BASE_URL.startswith("http")
+
+
+def test_bind_host_defaults_are_loopback():
+    # Default binds are loopback (served-port infra rule); a container overrides to 0.0.0.0.
+    from anamnesis import config
+    assert config.WEBUI_HOST == "127.0.0.1"
+    assert isinstance(config.WEBUI_PORT, int) and config.WEBUI_PORT > 0
+    assert config.GRAPHS_HOST == "127.0.0.1"

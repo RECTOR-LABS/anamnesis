@@ -1,0 +1,26 @@
+# Deploy Anamnesis to the Alibaba ECS (build-on-host). Manual trigger only — enable the `push`
+# trigger below once the ECS exists and the repo secrets are set, so it never fails spuriously.
+#
+# Required repo secrets: VPS_HOST, VPS_USER, VPS_SSH_KEY (private key), VPS_APP_PATH.
+name: Deploy
+
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Alibaba ECS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd ${{ secrets.VPS_APP_PATH }}
+            git pull --ff-only
+            docker compose up -d --build
+            docker image prune -f

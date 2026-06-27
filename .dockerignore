@@ -1,0 +1,19 @@
+# Keep the image lean + the build context small. The runtime needs only pyproject.toml,
+# src/, mcp/, app.py and scripts/ (editable install preserves the mcp/ entrypoint layout).
+.git
+.github
+.venv
+**/__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+*.egg-info
+graphs/
+.env
+.env.*
+!.env.example
+assets
+docs
+tests
+deploy
+*.md
