@@ -5,10 +5,15 @@ pure verdict pipeline (assess.py) is unchanged; this module performs the writes.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
+
+from ..assess import assess_risk
+from ..forensic.signals import TokenProfile
 from ..memory.alerts import AlertDraft, AlertStore
 from ..memory.graph import ForensicMemory
 from ..memory.models import Edge, Provenance, make_edge
-from ..risk import Verdict
+from ..risk import HIGH_THRESHOLD, Verdict
+from .serialize import draft_to_dict, verdict_to_dict
 
 
 def watchlist_add(
@@ -66,3 +71,35 @@ def draft_alert(
         message=_render_message(deployer, mint, verdict), status="pending", created_at=now,
     )
     return alerts.add_draft(draft)
+
+
+def assess_and_act(
+    memory: ForensicMemory,
+    alerts: AlertStore,
+    build_profile: Callable[[str], TokenProfile],
+    mint: str,
+    now: str,
+    *,
+    as_of: str | None = None,
+) -> dict:
+    """Assess a mint, and if the verdict is HIGH, auto-watchlist its deployer and draft a
+    pending alert. The verdict (the valuable read) is ALWAYS returned; a failed write
+    degrades to acted=False + an `error` note rather than discarding the investigation."""
+    profile = build_profile(mint)
+    verdict = assess_risk(profile, memory, as_of=as_of)
+    result = verdict_to_dict(verdict)
+    result["acted"] = False
+    result["watchlisted"] = None
+    result["alert"] = None
+    if verdict.score >= HIGH_THRESHOLD and profile.deployer:
+        try:
+            edge = watchlist_add(memory, profile.deployer, mint, verdict.score, now)
+            draft = draft_alert(alerts, verdict, profile.deployer, mint, now)
+            result["acted"] = True
+            result["watchlisted"] = {
+                "deployer": profile.deployer, "mint": mint, "edge_id": edge.id
+            }
+            result["alert"] = draft_to_dict(draft)
+        except Exception as exc:  # keep the verdict; surface only the failure type
+            result["error"] = f"act failed: {type(exc).__name__}"
+    return result

@@ -1,7 +1,9 @@
-from anamnesis.agent.actions import draft_alert, watchlist_add
-from anamnesis.forensic.signals import Signal
+from anamnesis.agent.actions import assess_and_act, draft_alert, watchlist_add
+from anamnesis.forensic.signals import LpAssessment, LpStatus, Signal, TokenProfile
 from anamnesis.memory.alerts import InMemoryAlertStore
 from anamnesis.memory.graph import ForensicMemory
+from anamnesis.memory.models import Provenance as _Prov
+from anamnesis.memory.models import make_edge
 from anamnesis.memory.repository import InMemoryRepository
 from anamnesis.risk import Verdict
 
@@ -52,3 +54,56 @@ def test_draft_alert_idempotent_per_deployer_mint():
     draft_alert(store, _verdict(), "dep", "mintZ", "2026-06-27")
     draft_alert(store, _verdict(), "dep", "mintZ", "2026-06-28")
     assert len(store.list_pending()) == 1
+
+
+def _rugger_memory():
+    mem = ForensicMemory(InMemoryRepository())
+    mem.remember(
+        [make_edge("RUGGED", "ruggerX", "tokA", valid_from="2026-01-01",
+                   recorded_at="2026-01-01", provenance=_Prov("helius:getAsset", "first_party", 0.95)),
+         make_edge("RUGGED", "ruggerX", "tokB", valid_from="2026-01-05",
+                   recorded_at="2026-01-05", provenance=_Prov("helius:getAsset", "first_party", 0.95))],
+        now="2026-01-05",
+    )
+    return mem
+
+
+def _clean_profile(deployer, mint="tokFresh"):
+    return TokenProfile(mint=mint, deployer=deployer, mint_authority=None, freeze_authority=None,
+                        lp=LpAssessment(LpStatus.SECURED), top_holder_pct=2.0, holder_count=300)
+
+
+def test_assess_and_act_high_verdict_watchlists_and_drafts():
+    # DoD: a remembered serial rugger's fresh, clean-looking token -> HIGH -> watchlist + alert.
+    mem, store = _rugger_memory(), InMemoryAlertStore()
+    out = assess_and_act(mem, store, lambda m: _clean_profile("ruggerX"), "tokFresh", "2026-06-27")
+    assert out["level"] == "high" and out["acted"] is True
+    assert out["watchlisted"]["deployer"] == "ruggerX"
+    assert out["alert"]["mint"] == "tokFresh" and out["alert"]["status"] == "pending"
+    assert [e for e in mem.recall("ruggerX") if e.type == "WATCHLISTED"]
+    assert len(store.list_pending()) == 1
+
+
+def test_assess_and_act_low_verdict_does_not_act():
+    mem, store = ForensicMemory(InMemoryRepository()), InMemoryAlertStore()
+    out = assess_and_act(mem, store, lambda m: _clean_profile("freshWallet", "m"), "m", "2026-06-27")
+    assert out["level"] == "low" and out["acted"] is False
+    assert out["watchlisted"] is None and out["alert"] is None
+    assert store.list_pending() == []
+
+
+def test_assess_and_act_preserves_verdict_when_write_fails():
+    class _BoomStore:
+        def add_draft(self, d):
+            raise RuntimeError("mongo down")
+
+        def list_pending(self):
+            return []
+
+        def get(self, i):
+            return None
+
+    out = assess_and_act(_rugger_memory(), _BoomStore(),
+                         lambda m: _clean_profile("ruggerX"), "tokFresh", "2026-06-27")
+    assert out["level"] == "high"          # verdict preserved despite the failed write
+    assert out["acted"] is False and "error" in out
