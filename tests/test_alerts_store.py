@@ -24,3 +24,15 @@ def test_add_draft_idempotent_per_deployer_mint_pending():
     again = store.add_draft(_draft(created="2026-06-28", did="alert:dep->mintZ@2026-06-28"))
     assert again == first                      # same (deployer,mint) pending -> existing returned
     assert len(store.list_pending()) == 1
+
+
+def test_contract_add_list_get(alerts):
+    d = alerts.add_draft(_draft())
+    assert [x.id for x in alerts.list_pending()] == [d.id]
+    assert alerts.get(d.id).mint == "mintZ"
+
+
+def test_contract_idempotent_pending(alerts):
+    alerts.add_draft(_draft(created="2026-06-27"))
+    alerts.add_draft(_draft(created="2026-06-28", did="alert:dep->mintZ@2026-06-28"))
+    assert len(alerts.list_pending()) == 1
