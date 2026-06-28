@@ -10,7 +10,7 @@
 |---|---|
 | **Hackathon** | Global AI Hackathon with Qwen Cloud (Devpost) — **MemoryAgent** track |
 | **Stack** | Python 3.12 · Qwen-Agent · `qwen-max` (DashScope-intl) · MCP · Helius · MongoDB / ApsaraDB · Alibaba Cloud |
-| **Status** | Phase A + B complete · **229 tests** green · agent verified live end-to-end |
+| **Status** | Phase A + B complete · **232 tests** green · agent verified live end-to-end |
 
 ---
 
@@ -78,7 +78,7 @@ python app.py                                  # Qwen-Agent WebUI; click the GYa
 
 # 4. Tests
 pip install -e ".[dev]"
-pytest -q                                      # 229 passing
+pytest -q                                      # 232 passing
 ruff check src tests
 ```
 
