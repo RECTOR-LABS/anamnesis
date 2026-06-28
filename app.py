@@ -10,6 +10,7 @@ from anamnesis import config
 from anamnesis.agent.agent import build_agent
 from anamnesis.agent.graph_server import make_graph_server
 from anamnesis.demo_seed import DEMO_MINT
+from anamnesis.logging_setup import quiet_http_loggers
 
 # Demo affordances for the judged WebUI. The first suggestion is the seeded demo mint (A.10),
 # so a judge is one click from the hero flow (its deployer is a remembered serial rugger ->
@@ -27,6 +28,10 @@ CHATBOT_CONFIG = {
 
 
 def main() -> None:
+    # Drop httpx/httpcore INFO request lines before serving — qwen-agent enables verbose logging,
+    # which would otherwise print the Helius api-key (carried in the request URL) to the console.
+    quiet_http_loggers()
+
     from threading import Thread
 
     from qwen_agent.gui import WebUI

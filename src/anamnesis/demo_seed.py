@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from . import config
+from .logging_setup import quiet_http_loggers
 from .memory.alerts import ALERTS_COLLECTION
 from .memory.graph import ForensicMemory
 from .memory.models import Edge, Provenance, make_edge
@@ -146,6 +147,9 @@ def _now_iso() -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Quiet httpx/httpcore INFO before any live-HTTP path (e.g. --metric does Helius reads) so the
+    # api-key carried in the request URL is never logged if the caller enabled verbose logging.
+    quiet_http_loggers()
     parser = argparse.ArgumentParser(description="Seed the Anamnesis demo memory (A.10).")
     parser.add_argument("--reset", action="store_true",
                         help="clear the demo collections before seeding (dry run unless --force)")
