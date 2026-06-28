@@ -22,6 +22,7 @@ from anamnesis.forensic.mcp_tools import (
     trace_funding_dict,
 )
 from anamnesis.forensic.pools import DexScreenerClient
+from anamnesis.logging_setup import quiet_http_loggers
 
 # Instance named `server` (not `mcp`) to avoid shadowing the imported package.
 server = FastMCP("solana-forensics")
@@ -92,6 +93,10 @@ def main() -> None:
     pre-warms it past the check-then-act race in ``_helius`` and closes the underlying HTTP
     client on shutdown.
     """
+    # Drop httpx/httpcore INFO request lines before serving — FastMCP enables INFO logging, which
+    # would otherwise print the Helius api-key (in the request URL) to stderr, forwarded to the
+    # parent WebUI console. The error paths scrub the key; this covers httpx's own request line.
+    quiet_http_loggers()
     with _helius():
         try:
             server.run()
