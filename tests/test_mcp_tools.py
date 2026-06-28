@@ -164,6 +164,22 @@ def test_holders_dict_degrades_concentration_on_mega_cap():
     assert out["largest"] == []
 
 
+class _NullValueLargestClient(_FakeClient):
+    # getTokenLargestAccounts whose RPC value is null -> helius returns None (not a list, no raise).
+    def get_token_largest_accounts(self, mint: str):
+        return None
+
+
+def test_holders_dict_degrades_when_largest_accounts_is_null():
+    # A null getTokenLargestAccounts value (helius returns None, no exception) degrades
+    # concentration to unknown — same partial-result contract as the mega-cap RPC-error path.
+    out = holders_dict(_NullValueLargestClient(), "mintA")
+    assert "error" not in out
+    assert out["holder_count"] == 742
+    assert out["top_holder_pct"] is None
+    assert out["largest"] == []
+
+
 def test_deployer_dict_degrades_on_rpc_error():
     # The previously-untested deployer_dict error branch: an RPC error on its primary read
     # (oldest_signature) degrades, it does not bubble out of the stdio loop.
