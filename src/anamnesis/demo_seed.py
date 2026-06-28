@@ -147,8 +147,8 @@ def _now_iso() -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    # The --metric path does live Helius reads; keep the api-key (carried in the request URL) out
-    # of any INFO request line if the caller has enabled verbose logging.
+    # Quiet httpx/httpcore INFO before any live-HTTP path (e.g. --metric does Helius reads) so the
+    # api-key carried in the request URL is never logged if the caller enabled verbose logging.
     quiet_http_loggers()
     parser = argparse.ArgumentParser(description="Seed the Anamnesis demo memory (A.10).")
     parser.add_argument("--reset", action="store_true",

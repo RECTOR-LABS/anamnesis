@@ -22,9 +22,11 @@ def quiet_http_loggers() -> None:
     """Raise httpx/httpcore to WARNING so their INFO request lines — which include the Helius
     api-key in the URL — are not logged.
 
-    Setting an explicit level on these loggers overrides the root level for their own records, so
-    this holds even when FastMCP or qwen-agent later configure global INFO logging, and call order
-    relative to those libraries does not matter.
+    This suppresses *all* httpx/httpcore INFO (connection notices included), not just the request
+    line — a deliberate trade-off; their WARNING/ERROR still surface. Setting an explicit level on
+    these loggers overrides the root level for their own records, so this holds even when FastMCP
+    or qwen-agent later configure global INFO logging, and call order relative to them does not
+    matter.
     """
     for name in _HTTP_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
