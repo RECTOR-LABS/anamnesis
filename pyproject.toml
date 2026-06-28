@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "Solana pre-trade forensic agent with compounding bi-temporal memory"
 requires-python = ">=3.12"
 dependencies = [
-  "qwen-agent[gui,mcp]>=0.0.30",
+  # qwen-agent + mcp are pinned (not >=): newer versions trigger heavy pip backtracking that makes
+  # the Docker/ECS build slow and timeout-prone. These are the dev- and container-validated
+  # versions — bump deliberately and re-validate the build (see deploy/RUNBOOK.md).
+  "qwen-agent[gui,mcp]==0.0.34",
   # qwen_agent.utils imports soundfile unconditionally, but the [gui,mcp] extra does not
   # pull it — so `import qwen_agent` (any submodule) fails without this. Declare it so a
   # plain `pip install -e .` yields a working agent/MCP/WebUI runtime (A.8/A.9/deploy).
@@ -12,7 +15,7 @@ dependencies = [
   "openai>=1.40",
   "httpx>=0.27",
   "pymongo>=4.6,<5",
-  "mcp>=1.2",
+  "mcp==1.12.4",
 ]
 
 [project.optional-dependencies]
