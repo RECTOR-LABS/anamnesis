@@ -89,18 +89,27 @@ def deployer_dict(client: HeliusClient, mint: str) -> dict:
 
 @_forensic_read
 def holders_dict(client: HeliusClient, mint: str, *, top_n: int = 10) -> dict:
-    """Holder concentration: total holders, top-holder %, and the largest accounts (<= top_n)."""
+    """Holder concentration: total holders, top-holder %, and the largest accounts (<= top_n).
+
+    Mega-cap mints (USDC/SOL/BONK) make getTokenLargestAccounts error; the concentration read
+    degrades to unknown (``top_holder_pct=None``, ``largest=[]``) rather than failing the whole
+    tool — ``holder_count`` is still useful. Mirrors build_token_profile's PR#22 degradation. A
+    malformed *return* (e.g. a non-dict entry) is NOT degraded here: it surfaces as a structured
+    error via the decorator, since that signals genuinely unparseable data, not a known limit."""
     top_n = max(0, top_n)  # negative top_n must not slice from the wrong end (drop the top holder)
     asset = client.get_asset(mint)
     supply = int((asset.get("token_info") or {}).get("supply") or 0)
-    largest = client.get_token_largest_accounts(mint)
     count = holder_count(client, mint)
+    try:
+        largest = client.get_token_largest_accounts(mint)
+    except (HeliusError, httpx.HTTPError):
+        largest = None  # mega-cap RPC limit — concentration unknown, not an error
     return {
         "mint": mint,
         "holder_count": count,
-        "top_holder_pct": top_holder_pct(largest, supply),
+        "top_holder_pct": top_holder_pct(largest, supply) if largest is not None else None,
         "largest": [
-            {"address": a.get("address"), "amount": a.get("amount")} for a in largest[:top_n]
+            {"address": a.get("address"), "amount": a.get("amount")} for a in (largest or [])[:top_n]
         ],
     }
 

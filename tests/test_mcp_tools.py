@@ -147,6 +147,39 @@ def test_handlers_degrade_on_malformed_payload():
     assert "error" in holders_dict(_NonDictHoldersClient(), "mintA")
 
 
+class _MegaCapLargestAccountsClient(_FakeClient):
+    # Mega-cap mints (USDC/SOL/BONK) make getTokenLargestAccounts error, but getAsset +
+    # getTokenAccounts still work — concentration should degrade to unknown, not fail the tool.
+    def get_token_largest_accounts(self, mint: str) -> list[dict]:
+        raise HeliusError("getTokenLargestAccounts failed: HTTP 400")
+
+
+def test_holders_dict_degrades_concentration_on_mega_cap():
+    # The getTokenLargestAccounts RPC errors on mega-caps; the tool must still return
+    # holder_count with concentration marked unknown, not collapse to an {"error"} dict.
+    out = holders_dict(_MegaCapLargestAccountsClient(), "mintA")
+    assert "error" not in out
+    assert out["holder_count"] == 742
+    assert out["top_holder_pct"] is None
+    assert out["largest"] == []
+
+
+class _NullValueLargestClient(_FakeClient):
+    # getTokenLargestAccounts whose RPC value is null -> helius returns None (not a list, no raise).
+    def get_token_largest_accounts(self, mint: str):
+        return None
+
+
+def test_holders_dict_degrades_when_largest_accounts_is_null():
+    # A null getTokenLargestAccounts value (helius returns None, no exception) degrades
+    # concentration to unknown — same partial-result contract as the mega-cap RPC-error path.
+    out = holders_dict(_NullValueLargestClient(), "mintA")
+    assert "error" not in out
+    assert out["holder_count"] == 742
+    assert out["top_holder_pct"] is None
+    assert out["largest"] == []
+
+
 def test_deployer_dict_degrades_on_rpc_error():
     # The previously-untested deployer_dict error branch: an RPC error on its primary read
     # (oldest_signature) degrades, it does not bubble out of the stdio loop.
