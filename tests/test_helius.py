@@ -553,3 +553,25 @@ def test_rpc_retries_on_429_then_succeeds():
     )
     with HeliusClient("test-key", max_retries=2) as client:
         assert client.get_asset("mintA") == {"id": "mintA"}
+
+
+@respx.mock
+def test_rpc_retries_on_transient_timeout_then_succeeds():
+    # A transient read/connect timeout (not a 429) must ALSO be retried with backoff — a single
+    # network blip must not abort a long multi-call scan (this is what crashed seed_demo --metric).
+    respx.post(HELIUS_URL).mock(
+        side_effect=[httpx.ReadTimeout("read timed out"), _json({"result": {"id": "mintA"}})]
+    )
+    with HeliusClient("test-key", max_retries=2) as client:
+        assert client.get_asset("mintA") == {"id": "mintA"}
+
+
+@respx.mock
+def test_rpc_timeout_gives_up_scrubbed():
+    # When retries are exhausted on a transient timeout, surface a scrubbed HeliusError — never
+    # the api-key-bearing URL — and name the transport-error type for diagnosis.
+    respx.post(HELIUS_URL).mock(side_effect=httpx.ReadTimeout("read timed out"))
+    with HeliusClient("test-key", max_retries=1) as client, pytest.raises(HeliusError) as exc:
+        client.get_asset("mintA")
+    assert "test-key" not in str(exc.value)
+    assert "ReadTimeout" in str(exc.value)
