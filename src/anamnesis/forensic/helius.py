@@ -101,8 +101,19 @@ class HeliusClient:
                     attempt += 1
                     continue
                 raise HeliusError(f"{method} failed: HTTP {e.response.status_code}") from None
+            except httpx.TransportError as e:
+                # Transient transport faults (read/connect timeouts, connection resets) get the
+                # same bounded backoff as 429s: a single network blip must not abort a long
+                # multi-call scan (this is what crashed seed_demo --metric). On give-up, scrub the
+                # api-key-bearing URL to the error type only.
+                if attempt < self._max_retries:
+                    time.sleep(min(2.0, 0.25 * 2 ** attempt))
+                    attempt += 1
+                    continue
+                raise HeliusError(f"{method} request failed: {type(e).__name__}") from None
             except httpx.HTTPError as e:
-                # Transport errors (connect/read/timeout) also reference the api-key URL — scrub.
+                # Any other httpx error (non-transport, non-status) still references the api-key
+                # URL — scrub to the error type only.
                 raise HeliusError(f"{method} request failed: {type(e).__name__}") from None
         data = resp.json()
         if data.get("error"):
