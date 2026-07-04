@@ -9,6 +9,9 @@ verdict_card).
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
+from anamnesis.forensic.pools import AggregatorError
 from anamnesis.memory.cluster import ClusterEdge, ClusterGraph, ClusterNode
 from anamnesis.memory.graph import ForensicMemory
 from anamnesis.memory.models import Provenance, make_edge
@@ -16,7 +19,7 @@ from anamnesis.memory.repository import InMemoryRepository
 from fastapi.testclient import TestClient
 
 from api import deps
-from api.cards import graph_dict
+from api.cards import graph_dict, price_points
 from api.main import app
 
 client = TestClient(app)
@@ -105,3 +108,190 @@ def test_get_graph_unknown_deployer_is_single_node_not_404(monkeypatch):
 
     assert resp.status_code == 200
     assert resp.json() == {"nodes": [{"id": "ghost", "type": "wallet", "flags": []}], "edges": []}
+
+
+# ---------------------------------------------------------------------------
+# price_points — pure reconstruction from DexScreener priceChange buckets
+# ---------------------------------------------------------------------------
+
+NOW = datetime(2026, 7, 4, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def test_price_points_reconstructs_oldest_to_newest_ending_at_current_price():
+    pairs = [{
+        "priceUsd": "2.0",
+        "priceChange": {"h24": -50.0, "h6": -20.0, "h1": 25.0, "m5": 0.0},
+        "liquidity": {"usd": 10000.0},
+    }]
+
+    points = price_points(pairs, NOW)
+
+    assert len(points) == 5  # h24, h6, h1, m5, + the always-appended current point
+    assert [p["t"] for p in points] == sorted(p["t"] for p in points)  # oldest -> newest
+    assert points[0]["price"] == 2.0 / (1 + -50.0 / 100)   # h24 reconstruction
+    assert points[1]["price"] == 2.0 / (1 + -20.0 / 100)   # h6
+    assert points[2]["price"] == 2.0 / (1 + 25.0 / 100)    # h1
+    assert points[3]["price"] == 2.0 / (1 + 0.0 / 100)     # m5
+    assert points[-1] == {"t": NOW.isoformat(), "price": 2.0}  # ends at current price
+
+
+def test_price_points_picks_highest_liquidity_pair():
+    pairs = [
+        {"priceUsd": "1.0", "priceChange": {"h24": 0.0}, "liquidity": {"usd": 5.0}},
+        {"priceUsd": "9.0", "priceChange": {"h24": 0.0}, "liquidity": {"usd": 999999.0}},
+    ]
+
+    points = price_points(pairs, NOW)
+
+    assert points[-1]["price"] == 9.0
+
+
+def test_price_points_empty_pairs_is_empty_list():
+    assert price_points([], NOW) == []
+
+
+def test_price_points_missing_price_usd_is_empty_list():
+    pairs = [{"priceUsd": None, "priceChange": {"h24": 1.0}, "liquidity": {"usd": 1.0}}]
+
+    assert price_points(pairs, NOW) == []
+
+
+def test_price_points_skips_missing_change_buckets_and_guards_divide_by_zero():
+    # h24/h1 are absent entirely (skipped, not a KeyError); m5 == -100% would divide by
+    # zero, so that bucket must be dropped rather than raising or emitting inf/nan.
+    pairs = [{
+        "priceUsd": "1.0",
+        "priceChange": {"h6": 10.0, "m5": -100.0},
+        "liquidity": {"usd": 1.0},
+    }]
+
+    points = price_points(pairs, NOW)
+
+    assert len(points) == 2  # h6 reconstruction + the always-appended current point
+    assert points[0]["price"] == 1.0 / (1 + 10.0 / 100)
+    assert points[-1]["price"] == 1.0
+
+
+def test_price_points_unparseable_price_usd_is_empty_list():
+    # Distinct from the None/TypeError branch above: "N/A" is a str, so float() raises
+    # ValueError, not TypeError — both must land in the same guard, not raise past it.
+    pairs = [{"priceUsd": "N/A", "priceChange": {"h24": 1.0}, "liquidity": {"usd": 1.0}}]
+
+    assert price_points(pairs, NOW) == []
+
+
+def test_price_points_non_dict_price_change_yields_only_current_point():
+    # Off-spec upstream data (see DexScreenerClient.token_pairs, which validates only the
+    # top-level list shape): a truthy non-dict priceChange must not raise AttributeError
+    # from `.get` — it degrades to "no reconstructed points" while the current-price point
+    # is still appended.
+    pairs = [{"priceUsd": "1.5", "priceChange": "not-a-dict", "liquidity": {"usd": 1.0}}]
+
+    points = price_points(pairs, NOW)
+
+    assert points == [{"t": NOW.isoformat(), "price": 1.5}]
+
+
+def test_price_points_non_dict_liquidity_does_not_crash_selection():
+    # A truthy non-dict liquidity must contribute 0 to the top-liquidity `max(...)` instead
+    # of raising AttributeError inside the key function.
+    pairs = [{"priceUsd": "4.0", "priceChange": {"h24": 0.0}, "liquidity": "not-a-dict"}]
+
+    points = price_points(pairs, NOW)
+
+    assert points[-1]["price"] == 4.0
+
+
+# ---------------------------------------------------------------------------
+# GET /api/price/{mint}
+# ---------------------------------------------------------------------------
+
+
+class _FakeDex:
+    """Stands in for DexScreenerClient: returns fixed pairs, or raises like the real
+    client's token_pairs does on a transport/shape failure."""
+
+    def __init__(self, pairs=None, error=None):
+        self._pairs = pairs
+        self._error = error
+
+    def token_pairs(self, mint: str) -> list[dict]:
+        if self._error is not None:
+            raise self._error
+        return self._pairs
+
+
+def test_get_price_returns_points_for_known_mint(monkeypatch):
+    pairs = [{
+        "priceUsd": "3.0",
+        "priceChange": {"h24": -10.0, "h6": -5.0, "h1": 2.0, "m5": 0.0},
+        "liquidity": {"usd": 42.0},
+    }]
+    monkeypatch.setattr(deps, "get_dex", lambda: _FakeDex(pairs=pairs))
+
+    resp = client.get("/api/price/someMint")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["points"]) == 5
+    assert body["points"][-1]["price"] == 3.0
+
+
+def test_get_price_empty_pairs_is_empty_points(monkeypatch):
+    monkeypatch.setattr(deps, "get_dex", lambda: _FakeDex(pairs=[]))
+
+    resp = client.get("/api/price/someMint")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"points": []}
+
+
+def test_get_price_missing_price_usd_is_empty_points(monkeypatch):
+    pairs = [{"priceUsd": None, "priceChange": {"h24": 1.0}, "liquidity": {"usd": 1.0}}]
+    monkeypatch.setattr(deps, "get_dex", lambda: _FakeDex(pairs=pairs))
+
+    resp = client.get("/api/price/someMint")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"points": []}
+
+
+def test_get_price_aggregator_error_is_empty_points_not_500(monkeypatch):
+    monkeypatch.setattr(deps, "get_dex", lambda: _FakeDex(error=AggregatorError("dexscreener down")))
+
+    resp = client.get("/api/price/someMint")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"points": []}
+
+
+def test_get_price_non_dict_price_change_is_200_not_500(monkeypatch):
+    # Reproduces the reviewer's finding: a truthy non-dict priceChange from an off-spec
+    # upstream pair used to raise AttributeError inside price_points, and since price_points
+    # is called outside the route's `except AggregatorError`, that became an unhandled 500 —
+    # violating this endpoint's documented never-500 contract (see api/routes/price.py's
+    # module docstring). TestClient re-raises server errors by default, so a regression here
+    # fails this test rather than silently reporting 500 in the JSON body.
+    pairs = [{"priceUsd": "1.0", "priceChange": "not-a-dict", "liquidity": {"usd": 1.0}}]
+    monkeypatch.setattr(deps, "get_dex", lambda: _FakeDex(pairs=pairs))
+
+    resp = client.get("/api/price/someMint")
+
+    assert resp.status_code == 200
+    points = resp.json()["points"]
+    assert len(points) == 1  # no reconstructed buckets, just the current-price point
+    assert points[0]["price"] == 1.0
+    assert isinstance(points[0]["t"], str) and points[0]["t"]  # route-clock timestamp, not asserted exactly
+
+
+def test_get_price_non_dict_liquidity_is_200_not_500(monkeypatch):
+    # Same contract violation, triggered even earlier: a truthy non-dict liquidity raises
+    # AttributeError inside the max(...) key function used to pick the top-liquidity pair,
+    # before price_points ever reaches the priceChange handling.
+    pairs = [{"priceUsd": "1.0", "priceChange": {"h24": 0.0}, "liquidity": "not-a-dict"}]
+    monkeypatch.setattr(deps, "get_dex", lambda: _FakeDex(pairs=pairs))
+
+    resp = client.get("/api/price/someMint")
+
+    assert resp.status_code == 200
+    assert len(resp.json()["points"]) == 2

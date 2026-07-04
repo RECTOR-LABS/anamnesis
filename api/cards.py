@@ -1,7 +1,9 @@
 """Pure serializers: engine verdict/result -> card-shaped JSON for the dashboard.
-No network, no engine mutation — composes over assess_and_act's dict output and
-memory.cluster's ClusterGraph."""
+No network, no engine mutation — composes over assess_and_act's dict output,
+memory.cluster's ClusterGraph, and DexScreener's raw pair dicts."""
 from __future__ import annotations
+
+from datetime import datetime, timedelta
 
 from anamnesis.memory.cluster import ClusterGraph
 
@@ -54,3 +56,55 @@ def graph_dict(cluster: ClusterGraph) -> dict:
         "nodes": [{"id": n.id, "type": n.kind, "flags": list(n.flags)} for n in cluster.nodes],
         "edges": [{"src": e.src, "dst": e.dst, "type": e.rel} for e in cluster.edges],
     }
+
+
+def _liq_usd(pair: dict) -> float:
+    """Liquidity accessor for the top-liquidity `max(...)` selection in `price_points`. A
+    non-dict `liquidity` (off-spec upstream data — `DexScreenerClient.token_pairs` validates
+    only that the top-level payload is a list, never per-pair field shapes) must contribute
+    0 to the comparison rather than raising `AttributeError` on `.get`."""
+    liq = pair.get("liquidity")
+    return (liq.get("usd") or 0) if isinstance(liq, dict) else 0
+
+
+def price_points(pairs: list[dict], now: datetime) -> list[dict]:
+    """Reconstruct a minimal price sparkline from DexScreener's `priceChange` percent
+    buckets (h24/h6/h1/m5) on the top-liquidity pair — an honest approximation, not a real
+    time series: the existing DexScreenerClient (anamnesis.forensic.pools) has no history
+    endpoint, only current price plus these rolling-window percent changes. `now` is
+    injected (never `datetime.now()` internally) so this stays deterministic and
+    unit-testable without freezing the clock.
+
+    Each bucket's implied past price is `price_now / (1 + pct/100)`; a bucket reporting
+    exactly -100% (or less, which DexScreener should never emit but a malformed payload
+    might) is skipped rather than dividing by zero/negative. Points are emitted oldest to
+    newest and the current price is always appended last, so the series stays monotonic in
+    time even when some buckets are missing.
+
+    Total on any `list[dict]` input — never raises. `GET /api/price/{mint}` calls this
+    outside its `except AggregatorError` guard, so a malformed-but-list-of-dicts upstream
+    payload (e.g. a truthy non-dict `priceChange` or `liquidity`) must degrade to a partial
+    or empty series, not a 500.
+    """
+    if not pairs:
+        return []
+    pair = max(pairs, key=_liq_usd)
+    try:
+        price_now = float(pair.get("priceUsd"))
+    except (TypeError, ValueError):
+        return []
+    pc = pair.get("priceChange")
+    if not isinstance(pc, dict):
+        pc = {}
+    points = []
+    for key, mins in (("h24", 1440), ("h6", 360), ("h1", 60), ("m5", 5)):  # oldest -> newest
+        ch = pc.get(key)
+        if ch is None:
+            continue
+        denom = 1 + ch / 100
+        if denom <= 0:  # guard: <= -100% would divide by zero/negative
+            continue
+        t = (now - timedelta(minutes=mins)).isoformat()
+        points.append({"t": t, "price": price_now / denom})
+    points.append({"t": now.isoformat(), "price": price_now})  # always end at current
+    return points
