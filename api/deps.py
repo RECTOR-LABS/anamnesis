@@ -2,13 +2,15 @@
 
 Wraps the exact constructors `anamnesis.agent.tools` uses for its qwen-agent tool singletons
 (ForensicMemory over MongoRepository, the Mongo-backed AlertStore, HeliusClient,
-DexScreenerClient, and the LP-aware profile builder) as `functools.lru_cache(maxsize=1)`
-module-level accessors, available whether or not qwen-agent is installed. tools.py's originals
-live inside an `if register_tool is not None:` block gated on qwen-agent's presence (it only
-needs them when assembling the Qwen-Agent Assistant); the FastAPI process needs the same
-singletons unconditionally, so this module builds its own. Engine is FROZEN: nothing here
-reimplements assess_risk/assess_and_act, it only wires the existing constructors together for
-the routes.
+DexScreenerClient) as `functools.lru_cache(maxsize=1)` module-level accessors, available
+whether or not qwen-agent is installed. tools.py's originals live inside an
+`if register_tool is not None:` block gated on qwen-agent's presence (it only needs them when
+assembling the Qwen-Agent Assistant); the FastAPI process needs the same singletons
+unconditionally, so this module builds its own. `build_profile` (the LP-aware profile builder)
+is wired the same way but deliberately NOT cached — see its docstring — a live rug detector
+must never keep serving a "clean" verdict for a mint that rugged since the last time it was
+read. Engine is FROZEN: nothing here reimplements assess_risk/assess_and_act, it only wires the
+existing constructors together for the routes.
 
 CI-safety: every top-level import below is qwen-agent-free (pymongo, anamnesis.forensic.*,
 anamnesis.memory.*, anamnesis.agent.tools, anamnesis.agent.actions — none pull in qwen-agent at
@@ -63,11 +65,12 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-@lru_cache(maxsize=256)
 def build_profile(mint: str) -> TokenProfile:
-    """The exact LP-aware profile builder the agent uses (anamnesis.agent.tools), cached per
-    mint so assess()'s second read below (for `deployer`) is a cache hit, not a second
-    Helius/DexScreener round-trip."""
+    """The exact LP-aware profile builder the agent uses (anamnesis.agent.tools). Deliberately
+    UNCACHED (no lru_cache): a live rug detector must never keep answering "clean" for a mint
+    that rugged minutes ago just because an earlier request's read got cached. assess() below
+    still avoids a second Helius/DexScreener round-trip per request — via a closure, not a
+    cache; see its docstring."""
     return build_lp_aware_profile(get_helius(), get_dex(), mint)
 
 
@@ -78,14 +81,16 @@ def assess(mint: str) -> dict:
     Returns the engine's raw result dict verbatim (`level` stays lowercase
     "high"/"medium"/"low" — `verdict_card` is the boundary that uppercases it for the
     dashboard, not this function) plus `mint` (echoed back; assess_and_act never puts it on
-    the result) and `deployer` (read off the profile). `build_profile` is referenced here as
-    the bare module global — not a locally bound alias — both so tests can monkeypatch
-    `deps.build_profile` and so this second call and assess_and_act's internal one share one
-    lru_cache entry per mint.
+    the result) and `deployer` (read off the profile). `build_profile(mint)` is called exactly
+    ONCE here — referenced as the bare module global (not a locally bound alias) so tests can
+    still monkeypatch `deps.build_profile` — and the resulting profile is threaded into
+    assess_and_act via a `lambda _m: profile` closure, so assess_and_act's own internal call
+    reuses that same fresh profile instead of triggering a second Helius/DexScreener round-trip.
     """
-    result = assess_and_act(get_memory(), get_alerts(), build_profile, mint, _now())
+    profile = build_profile(mint)
+    result = assess_and_act(get_memory(), get_alerts(), lambda _m: profile, mint, _now())
     result["mint"] = mint
-    result["deployer"] = build_profile(mint).deployer
+    result["deployer"] = profile.deployer
     return result
 
 
