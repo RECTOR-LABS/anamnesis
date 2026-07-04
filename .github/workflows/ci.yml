@@ -30,14 +30,16 @@ jobs:
       # Test tooling + the runtime deps the current tests exercise: httpx (with
       # respx to mock it) for the forensic reads, pymongo + mongomock for the
       # memory-store contract — mongomock stands in for ApsaraDB so the Mongo
-      # translation is verified without a server — and fastapi for the api/
-      # routes (tests/api/test_assess_route.py drives them via FastAPI's
-      # TestClient, no network). Heavier deps (qwen-agent, mcp, sse-starlette)
-      # are still added per-task as their tests land, keeping this check fast and
-      # access-independent. ruff is pinned to the locally-verified version so the
-      # lint result is reproducible (new ruff minors add rules).
+      # translation is verified without a server — fastapi for the api/ routes
+      # (tests/api/test_assess_route.py drives them via FastAPI's TestClient, no
+      # network), and sse-starlette for the /api/chat SSE stream
+      # (tests/api/test_chat_route.py, same TestClient, no network, no real
+      # qwen-agent). Heavier deps (qwen-agent, mcp) are still added per-task as
+      # their tests land, keeping this check fast and access-independent. ruff is
+      # pinned to the locally-verified version so the lint result is reproducible
+      # (new ruff minors add rules).
       - name: Install test tooling
-        run: python -m pip install "pytest>=8" "ruff==0.15.18" "httpx>=0.27" "respx>=0.21" "pymongo>=4.6,<5" "mongomock>=4.1" "fastapi==0.138.0"
+        run: python -m pip install "pytest>=8" "ruff==0.15.18" "httpx>=0.27" "respx>=0.21" "pymongo>=4.6,<5" "mongomock>=4.1" "fastapi==0.138.0" "sse-starlette==3.4.5"
 
       - name: Lint (ruff)
         run: ruff check .

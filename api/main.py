@@ -9,9 +9,19 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from anamnesis.logging_setup import quiet_http_loggers
 from api.routes.assess import router as assess_router
+from api.routes.chat import router as chat_router
 
 app = FastAPI(title="Anamnesis API")
+
+# Raise httpx/httpcore to WARNING before any request can run: the chat route drives the agent
+# -> forensic MCP tools -> Helius reads, whose INFO request line carries the Helius api-key in
+# the URL. Module level (not a @app.on_event("startup") handler) so this is active
+# unconditionally — including under a bare `TestClient(app)`, which never runs ASGI lifespan
+# events — and covers the assess route too. logging_setup imports only stdlib `logging`, so
+# this stays CI-safe.
+quiet_http_loggers()
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,6 +31,7 @@ app.add_middleware(
 )
 
 app.include_router(assess_router)
+app.include_router(chat_router)
 
 
 @app.get("/api/health")
