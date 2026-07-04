@@ -5,7 +5,7 @@
     --accent:#2fe3cf; --accent-dim:rgba(47,227,207,.13); --accent-line:rgba(47,227,207,.35);
     --high:#ff5b6e; --high-bg:rgba(255,91,110,.12); --high-line:rgba(255,91,110,.4);
     --med:#f4b740; --med-bg:rgba(244,183,64,.12); --med-line:rgba(244,183,64,.4);
-    --low:#37d391; --low-bg:rgba(55,211,145,.12);
+    --low:#37d391; --low-bg:rgba(55,211,145,.12); --low-line:rgba(55,211,145,.4);
     --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,monospace;
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   }
@@ -78,6 +78,8 @@
   .vtop{display:flex;align-items:center;gap:10px;margin-bottom:6px}
   .pill{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;letter-spacing:.12em;font-weight:700;padding:5px 10px;border-radius:999px}
   .pill.high{color:var(--high);background:var(--high-bg);border:1px solid var(--high-line)}
+  .pill.med{color:var(--med);background:var(--med-bg);border:1px solid var(--med-line)}
+  .pill.low{color:var(--low);background:var(--low-bg);border:1px solid var(--low-line)}
   .pill .pdot{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor}
   .vscore{margin-left:auto;text-align:right}
   .vscore .n{font-family:var(--mono);font-size:34px;font-weight:700;line-height:1;letter-spacing:-.01em}
