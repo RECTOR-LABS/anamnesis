@@ -16,7 +16,7 @@
   .mono{font-family:var(--mono)} .tnum{font-variant-numeric:tabular-nums}
   @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
   .anim{opacity:0;animation:rise .55s cubic-bezier(.2,.7,.2,1) forwards}
-  @media(prefers-reduced-motion:reduce){.anim{opacity:1;animation:none}.stripe i{transform:none!important}.edge{stroke-dashoffset:0!important}.meter i{width:85%!important}}
+  @media(prefers-reduced-motion:reduce){.anim{opacity:1;animation:none}.stripe i{transform:none!important}.edge{stroke-dashoffset:0!important}.meter i{transition:none!important}}
 
   /* view-mode toggle */
   .mode-lite .pro-only{display:none!important}
@@ -73,6 +73,9 @@
   .verdict{display:flex;gap:18px}
   .stripe{width:4px;border-radius:4px;flex:none;background:var(--inset);overflow:hidden}
   .stripe i{display:block;width:100%;height:100%;transform-origin:top;transform:scaleY(0);background:linear-gradient(var(--high),rgba(255,91,110,.3));box-shadow:0 0 14px var(--high-line);animation:draw .7s ease-out .15s forwards}
+  .stripe.stripe-high i{background:linear-gradient(var(--high),rgba(255,91,110,.3));box-shadow:0 0 14px var(--high-line)}
+  .stripe.stripe-medium i{background:linear-gradient(var(--med),rgba(244,183,64,.3));box-shadow:0 0 14px var(--med-line)}
+  .stripe.stripe-low i{background:linear-gradient(var(--low),rgba(55,211,145,.3));box-shadow:0 0 14px var(--low-line)}
   @keyframes draw{to{transform:scaleY(1)}}
   .vmain{flex:1;min-width:0}
   .vtop{display:flex;align-items:center;gap:10px;margin-bottom:6px}
@@ -85,8 +88,7 @@
   .vscore .n{font-family:var(--mono);font-size:34px;font-weight:700;line-height:1;letter-spacing:-.01em}
   .vscore .l{font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;color:var(--faint);text-transform:uppercase;margin-top:5px}
   .meter{height:5px;border-radius:4px;background:var(--inset);margin:14px 0 12px;overflow:hidden;border:1px solid var(--line)}
-  .meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--med),var(--high));animation:fill 1.1s ease-out .2s forwards}
-  @keyframes fill{to{width:85%}}
+  .meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--med),var(--high));transition:width 1.1s ease-out .2s}
   .mint{font-family:var(--mono);font-size:12.5px;word-break:break-all}
   .mint .k{color:var(--faint);font-size:10px;letter-spacing:.16em;text-transform:uppercase;display:block;margin-bottom:3px}
   .prov{display:flex;gap:8px;margin-top:14px}
