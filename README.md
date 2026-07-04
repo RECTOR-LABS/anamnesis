@@ -10,7 +10,7 @@
 |---|---|
 | **Hackathon** | Global AI Hackathon with Qwen Cloud (Devpost) — **MemoryAgent** track |
 | **Stack** | Python 3.12 · Qwen-Agent · `qwen-max` (DashScope-intl) · MCP · Helius · MongoDB / ApsaraDB · Alibaba Cloud |
-| **Status** | Phase A + B complete · **234 tests** green · agent verified live end-to-end |
+| **Status** | Phase A + B complete · **236 tests** green · agent verified live end-to-end |
 
 ---
 
@@ -23,7 +23,7 @@ Existing on-chain AI tools query **statelessly**: every token is investigated co
 >
 > *"I have seen the deployer of this token rug three tokens before … the risk is HIGH, regardless of its current on-chain state."*
 >
-> Recalling that deployer's rug history from memory takes **~181 ms**; re-deriving it cold by scanning all 13 mints on-chain takes **~258 s** — **≈1,400× faster**, and the cold path is exactly the work memory lets you skip.
+> Recalling that deployer's rug history from memory takes **~2.7 ms**; re-deriving it cold by scanning all 13 mints on-chain takes **~268 s** — **≈99,000× faster** (~5 orders of magnitude; recall is single-digit ms, the cold path is network-bound and run-variable), and the cold path is exactly the work memory lets you skip.
 
 ## How it works
 
@@ -78,7 +78,7 @@ python app.py                                  # Qwen-Agent WebUI; click the GYa
 
 # 4. Tests
 pip install -e ".[dev]"
-pytest -q                                      # 232 passing
+pytest -q                                      # 236 passing
 ruff check src tests
 ```
 
