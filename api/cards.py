@@ -1,6 +1,9 @@
 """Pure serializers: engine verdict/result -> card-shaped JSON for the dashboard.
-No network, no engine mutation — composes over assess_and_act's dict output."""
+No network, no engine mutation — composes over assess_and_act's dict output and
+memory.cluster's ClusterGraph."""
 from __future__ import annotations
+
+from anamnesis.memory.cluster import ClusterGraph
 
 
 def _rugs(remembered: list[dict]) -> list[dict]:
@@ -39,4 +42,15 @@ def verdict_card(result: dict, mint: str, deployer: str | None) -> dict:
         "acted": result.get("acted", False),
         "watchlisted": result.get("watchlisted"),
         "alert": result.get("alert"),
+    }
+
+
+def graph_dict(cluster: ClusterGraph) -> dict:
+    """Reshape a `recall_cluster` result (anamnesis.memory.cluster.ClusterGraph) into the
+    dashboard's graph contract: `{nodes:[{id,type,flags}], edges:[{src,dst,type}]}`. Pure
+    field renaming only (`kind`->`type` on nodes, `rel`->`type` on edges) — no filtering or
+    truncation logic of its own; `recall_cluster` already bounds/truncates the walk."""
+    return {
+        "nodes": [{"id": n.id, "type": n.kind, "flags": list(n.flags)} for n in cluster.nodes],
+        "edges": [{"src": e.src, "dst": e.dst, "type": e.rel} for e in cluster.edges],
     }

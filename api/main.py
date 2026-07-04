@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from anamnesis.logging_setup import quiet_http_loggers
 from api.routes.assess import router as assess_router
 from api.routes.chat import router as chat_router
+from api.routes.graph import router as graph_router
 
 app = FastAPI(title="Anamnesis API")
 
@@ -32,6 +33,7 @@ app.add_middleware(
 
 app.include_router(assess_router)
 app.include_router(chat_router)
+app.include_router(graph_router)
 
 
 @app.get("/api/health")
