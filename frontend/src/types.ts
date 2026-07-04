@@ -156,3 +156,8 @@ export interface ChatEvent {
   content: string
   tool?: string
 }
+
+/** Frontend view-mode toggle (Lite/Pro) — UI-only presentation state, not part of the backend
+ * wire contract above. Lite hides `.pro-only` sections (mockup v4's
+ * `.mode-lite .pro-only{display:none}`); Pro shows everything. */
+export type Mode = 'lite' | 'pro'
