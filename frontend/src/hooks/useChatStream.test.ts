@@ -129,4 +129,55 @@ describe('useChatStream', () => {
       { role: 'assistant', content: '' },
     ])
   })
+
+  it('accumulates the frame `tool` affordance onto the assistant turn as an ordered, consecutive-deduped trace', () => {
+    let onEvent!: (e: ChatEvent) => void
+    mockedStreamChat.mockImplementation((_message, _mint, ev) => {
+      onEvent = ev
+      return Promise.resolve()
+    })
+    const { result } = renderHook(() => useChatStream())
+    act(() => {
+      result.current.send('trace it', 'MINT')
+    })
+
+    // One tool call surfaces as two same-name frames (the about-to-call assistant frame + the
+    // function-role response), both carrying `tool` — they must collapse to a single trace entry.
+    act(() => {
+      onEvent({ role: 'assistant', content: '', tool: 'recall' })
+    })
+    act(() => {
+      onEvent({ role: 'tool', content: '{"rugs":3}', tool: 'recall' })
+    })
+    act(() => {
+      onEvent({ role: 'assistant', content: '', tool: 'solana_forensics-trace_funding' })
+    })
+    act(() => {
+      onEvent({ role: 'assistant', content: 'HIGH — 3 prior rugs', tool: 'assess_risk' })
+    })
+
+    expect(result.current.messages[1]).toEqual({
+      role: 'assistant',
+      content: 'HIGH — 3 prior rugs',
+      tools: ['recall', 'solana_forensics-trace_funding', 'assess_risk'],
+    })
+  })
+
+  it("keeps a tool frame's content out of the bubble while still recording its tool name", () => {
+    let onEvent!: (e: ChatEvent) => void
+    mockedStreamChat.mockImplementation((_message, _mint, ev) => {
+      onEvent = ev
+      return Promise.resolve()
+    })
+    const { result } = renderHook(() => useChatStream())
+    act(() => {
+      result.current.send('hi', 'MINT')
+    })
+    act(() => {
+      onEvent({ role: 'tool', content: 'raw tool json — must not render', tool: 'recall' })
+    })
+
+    expect(result.current.messages[1].content).toBe('')
+    expect(result.current.messages[1].tools).toEqual(['recall'])
+  })
 })

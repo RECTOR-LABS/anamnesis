@@ -39,16 +39,51 @@ export function ChatPanel({ messages, streaming, onSend, error }: ChatPanelProps
       className="anim pro-only"
     >
       {messages
-        // Don't render an empty assistant bubble: the optimistic placeholder appended on send
-        // stays empty if the turn errors before any text arrives (or yields only tool frames),
-        // which would otherwise show a stray ◈ avatar over a blank <p> next to the error note.
-        .filter((m) => m.role !== 'assistant' || m.content !== '')
+        // Render an assistant bubble once it has streamed text OR an orchestration trace: the
+        // optimistic placeholder appended on send is empty until frames arrive, and hiding a
+        // trace-but-no-text-yet turn would hide the live "using recall → …" trace during the tool
+        // phase. A truly empty turn (errored before any frame) still stays hidden, so no stray ◈
+        // avatar sits over a blank <p> next to the error note.
+        .filter((m) => m.role !== 'assistant' || m.content !== '' || !!m.tools?.length)
         .map((m, i) => (
           <div className={m.role === 'assistant' ? 'msg a' : 'msg'} key={i}>
             <div className={m.role === 'assistant' ? 'av a' : 'av u'}>
               {m.role === 'assistant' ? '◈' : 'YOU'}
             </div>
-            <p>{m.content}</p>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {/* The qwen-agent tool trace (recall → forensic reads → assess) — makes the
+                  memory-first orchestration visible instead of a black box. */}
+              {m.tools && m.tools.length > 0 && (
+                <div
+                  className="tooltrace"
+                  aria-label="tools the agent used"
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '5px',
+                    marginBottom: m.content ? '6px' : '0',
+                    fontFamily: 'var(--mono)',
+                    fontSize: '10px',
+                  }}
+                >
+                  {m.tools.map((t, ti) => (
+                    <span
+                      key={ti}
+                      style={{
+                        color: 'var(--accent)',
+                        background: 'var(--accent-dim)',
+                        border: '1px solid var(--accent-line)',
+                        borderRadius: '5px',
+                        padding: '1px 6px',
+                      }}
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <p>{m.content}</p>
+            </div>
           </div>
         ))}
       {error && (
