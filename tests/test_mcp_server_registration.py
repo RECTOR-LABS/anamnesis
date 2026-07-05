@@ -14,7 +14,9 @@ import pathlib
 
 import pytest
 
-pytest.importorskip("mcp")  # skipped in CI (mcp not installed there)
+pytest.importorskip("mcp.server.fastmcp")  # skip in CI: the mcp SDK is absent there, and the
+# repo's own top-level mcp/ dir (on sys.path via pythonpath=".") is a namespace pkg, not the SDK —
+# so a plain importorskip("mcp") would NOT skip. Guard on the actual dependency the entrypoint needs.
 
 _ENTRYPOINT = pathlib.Path(__file__).resolve().parents[1] / "mcp" / "solana_forensics_mcp.py"
 
