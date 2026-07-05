@@ -60,15 +60,20 @@ def health() -> dict:
 # test suite, a bare Vite dev workflow) imports cleanly and still answers `/api/*` — the SPA is
 # simply absent. Mounted LAST, so every `/api/*` route is matched before this catch-all.
 class _SPAStaticFiles(StaticFiles):
-    """StaticFiles with a client-side-routing fallback: an unknown, non-API path resolves to
-    index.html (the app shell) instead of 404, so browser deep links load the SPA. `/api/*`
-    misses are deliberately excluded — they must surface as real API 404s, not the shell."""
+    """StaticFiles with a client-side-routing fallback: an unknown non-API, non-asset path
+    resolves to index.html (the app shell) instead of 404, so browser deep links load the SPA.
+    Two path classes are deliberately excluded so they surface real 404s, not the shell:
+    `api`/`api/*` (API misses must stay API errors) and `assets/*` (hashed build files — a stale
+    `assets/index-<oldhash>.js` request from a tab open across a redeploy must 404 so the browser
+    errors cleanly, not receive 200 text/html it then fails to parse as JS)."""
 
     async def get_response(self, path: str, scope):
         try:
             return await super().get_response(path, scope)
         except StarletteHTTPException as exc:
-            if exc.status_code == 404 and not path.startswith("api/"):
+            if (exc.status_code == 404
+                    and path != "api"
+                    and not path.startswith(("api/", "assets/"))):
                 return await super().get_response("index.html", scope)
             raise
 

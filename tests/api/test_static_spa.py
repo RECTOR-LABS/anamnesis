@@ -89,3 +89,22 @@ def test_no_build_present_is_a_noop(tmp_path: Path) -> None:
     client = TestClient(app)
     assert client.get("/api/health").status_code == 200
     assert client.get("/").status_code == 404
+
+
+def test_bare_api_path_404s_and_never_serves_the_shell(tmp_path: Path) -> None:
+    # A bare `/api` (no trailing slash) is still an API-namespace miss, not a client-side SPA route.
+    app = _app_with_api()
+    _mount_frontend(app, _make_dist(tmp_path))
+    resp = TestClient(app).get("/api")
+    assert resp.status_code == 404
+    assert 'id="root"' not in resp.text
+
+
+def test_missing_hashed_asset_404s_not_the_shell(tmp_path: Path) -> None:
+    # A stale /assets/index-<oldhash>.js request (a tab open across a redeploy) must 404 so the
+    # browser errors cleanly — never receive 200 text/html it would then fail to parse as JS.
+    app = _app_with_api()
+    _mount_frontend(app, _make_dist(tmp_path))
+    resp = TestClient(app).get("/assets/index-deadbeef.js")
+    assert resp.status_code == 404
+    assert 'id="root"' not in resp.text

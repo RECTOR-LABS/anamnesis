@@ -6,6 +6,7 @@ the route wires deps.assess -> verdict_card end-to-end, including the lowercase-
 `level` normalization that only verdict_card performs (api/cards.py)."""
 from fastapi.testclient import TestClient
 
+from anamnesis.forensic.helius import HeliusError
 from api import deps
 from api.main import app
 
@@ -65,3 +66,25 @@ def test_get_health_ok():
 
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
+
+
+def test_post_assess_rejects_a_malformed_mint_with_400():
+    # A present-but-malformed mint (not base58 / wrong length) is a client error rejected before any
+    # engine/Helius work — distinct from a MISSING field (which pydantic 422s).
+    resp = client.post("/api/assess", json={"mint": "not-a-mint"})
+
+    assert resp.status_code == 400
+
+
+def test_post_assess_degrades_a_helius_failure_to_502(monkeypatch):
+    # deps.assess -> build_lp_aware_profile is NOT @_forensic_read-wrapped, so a live-read failure
+    # (429-storm, 5xx/timeout, a nonexistent mint) raises HeliusError; the route must degrade it to
+    # a clean 502, never a raw 500.
+    def _boom(_mint: str) -> dict:
+        raise HeliusError("upstream 429")
+
+    monkeypatch.setattr(deps, "assess", _boom)
+
+    resp = client.post("/api/assess", json={"mint": MINT})
+
+    assert resp.status_code == 502

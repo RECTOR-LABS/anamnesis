@@ -213,6 +213,14 @@ def test_post_chat_missing_message_is_422():
     assert resp.status_code == 422
 
 
+def test_post_chat_empty_message_is_400():
+    # A present-but-blank/whitespace message passes pydantic (str, no min_length) but must be
+    # rejected before spending an agent turn (LLM + forensic tools) on nothing.
+    resp = client.post("/api/chat", json={"message": "   "})
+
+    assert resp.status_code == 400
+
+
 def test_post_chat_midstream_exception_emits_generic_error_frame_not_raw_exception(monkeypatch):
     # The Important finding this locks down: a mid-stream agent exception must not silently drop
     # the connection (no truncated stream / propagated exception reaching the client), and the

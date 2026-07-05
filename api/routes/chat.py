@@ -47,7 +47,7 @@ import json
 import logging
 from collections.abc import Iterator
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 from starlette.concurrency import iterate_in_threadpool
@@ -154,4 +154,8 @@ def _stream_chat(message: str, mint: str | None) -> Iterator[dict]:
 
 @router.post("/api/chat")
 def post_chat(body: ChatIn) -> EventSourceResponse:
+    # A public entry point (CLAUDE.md): reject a blank/whitespace-only message before spending an
+    # agent turn (LLM + forensic tools) on nothing. A missing field already 422s via pydantic.
+    if not body.message.strip():
+        raise HTTPException(status_code=400, detail="message must not be empty")
     return EventSourceResponse(iterate_in_threadpool(_stream_chat(body.message, body.mint)))

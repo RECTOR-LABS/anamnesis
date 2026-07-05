@@ -9,8 +9,22 @@ from anamnesis.memory.cluster import ClusterGraph
 
 
 def _rugs(remembered: list[dict]) -> list[dict]:
-    return [{"mint": e["dst"], "date": e.get("valid_from")}
-            for e in remembered if e.get("type") == "RUGGED" and e.get("method") == "first_party"]
+    # First-party RUGGED edges only (the provenance-trust distinction the UI labels on), DEDUPED
+    # by dst: the memory graph deliberately lets independent first-party edges to the SAME rugged
+    # mint coexist as corroboration (memory.graph._supersedes), but the card shows and counts
+    # DISTINCT tokens — matching the score, which keys trust-weighted risk on dst — so a
+    # corroborated rug is one entry, not an inflated count with a duplicate React key downstream.
+    seen: set[str] = set()
+    rugs: list[dict] = []
+    for e in remembered:
+        if e.get("type") != "RUGGED" or e.get("method") != "first_party":
+            continue
+        dst = e["dst"]
+        if dst in seen:
+            continue
+        seen.add(dst)
+        rugs.append({"mint": dst, "date": e.get("valid_from")})
+    return rugs
 
 
 def verdict_card(result: dict, mint: str, deployer: str | None) -> dict:
@@ -86,8 +100,9 @@ def price_points(pairs: list[dict], now: datetime) -> list[dict]:
     payload (e.g. a truthy non-dict `priceChange` or `liquidity`) must degrade to a partial
     or empty series, not a 500.
     """
-    if not pairs:
-        return []
+    pairs = [p for p in pairs if isinstance(p, dict)]  # drop off-spec non-dict elements up front:
+    if not pairs:                                      # token_pairs validates only the top-level
+        return []                                      # list, so `_liq_usd`/`.get` below stay safe
     pair = max(pairs, key=_liq_usd)
     try:
         price_now = float(pair.get("priceUsd"))
@@ -99,8 +114,8 @@ def price_points(pairs: list[dict], now: datetime) -> list[dict]:
     points = []
     for key, mins in (("h24", 1440), ("h6", 360), ("h1", 60), ("m5", 5)):  # oldest -> newest
         ch = pc.get(key)
-        if ch is None:
-            continue
+        if not isinstance(ch, (int, float)) or isinstance(ch, bool):  # None/str/list/dict/bool ->
+            continue                                                  # skip (never 1 + str/100 TypeError)
         denom = 1 + ch / 100
         if denom <= 0:  # guard: <= -100% would divide by zero/negative
             continue

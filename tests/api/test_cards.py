@@ -1,4 +1,6 @@
-from api.cards import verdict_card
+from datetime import datetime, timezone
+
+from api.cards import price_points, verdict_card
 
 
 def test_verdict_card_shapes_high_from_memory():
@@ -87,3 +89,36 @@ def test_verdict_card_low_level_has_no_first_party_score():
     assert card["level"] == "LOW"
     assert card["provenance"]["first_party"] is None
     assert card["provenance"]["claimed"] is None
+
+
+def test_verdict_card_rugs_dedupes_corroborating_edges_by_mint():
+    # The memory graph lets independent first-party RUGGED edges to the SAME dst coexist as
+    # corroboration; the card counts DISTINCT rugged tokens (matching the score, which keys
+    # trust-weighted risk on dst), so two edges to one mint collapse to a single entry — no
+    # inflated "rugged N tokens" count, no duplicate React key downstream.
+    result = {
+        "level": "HIGH", "score": 0.9, "rationale": "…", "signals": [],
+        "remembered": [
+            {"type": "RUGGED", "dst": "3qFSo", "valid_from": "2025-11-16", "method": "first_party"},
+            {"type": "RUGGED", "dst": "3qFSo", "valid_from": "2025-10-01", "method": "first_party"},
+        ],
+        "acted": False, "watchlisted": None, "alert": None,
+    }
+    rugs = verdict_card(result, mint="m", deployer=None)["memory_rugs"]
+    assert [r["mint"] for r in rugs] == ["3qFSo"]  # one entry, not two
+
+
+def test_price_points_never_raises_on_off_spec_pairs():
+    # GET /api/price promises never-500: token_pairs validates only the top-level list, so a
+    # non-dict element or a non-numeric priceChange bucket must degrade, not raise.
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    assert price_points([None, 123, "x"], now) == []  # all off-spec -> empty, no AttributeError
+    # a non-numeric priceChange value is skipped, never fed to `1 + ch / 100` (would TypeError)
+    pts = price_points([{"priceUsd": "1.0", "priceChange": {"h24": "5"}}], now)
+    assert pts == [{"t": now.isoformat(), "price": 1.0}]  # current price only, no crash
+
+
+def test_price_points_selects_the_valid_pair_among_off_spec_elements():
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    pts = price_points([None, {"priceUsd": "2.0", "priceChange": {"h1": 100}}], now)
+    assert [p["price"] for p in pts] == [1.0, 2.0]  # h1 +100% -> past 1.0, then current 2.0
