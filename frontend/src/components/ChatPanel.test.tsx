@@ -71,4 +71,39 @@ describe('ChatPanel', () => {
     renderChatPanel({ error: 'boom' })
     expect(screen.getByText('Chat error — boom')).toBeInTheDocument()
   })
+
+  it("renders the assistant turn's tool trace as chips", () => {
+    const messages: ChatMessage[] = [
+      { role: 'user', content: 'is this a rug?' },
+      {
+        role: 'assistant',
+        content: 'HIGH — 3 prior rugs',
+        tools: ['recall', 'solana_forensics-trace_funding'],
+      },
+    ]
+    const { container } = renderChatPanel({ messages })
+    const trace = container.querySelector('.tooltrace')
+    expect(trace).toBeInTheDocument()
+    expect(trace).toHaveTextContent('recall')
+    expect(trace).toHaveTextContent('solana_forensics-trace_funding')
+  })
+
+  it('renders an assistant turn with tools but no text yet, so the trace shows live during the tool phase', () => {
+    const messages: ChatMessage[] = [
+      { role: 'user', content: 'go' },
+      { role: 'assistant', content: '', tools: ['recall'] },
+    ]
+    const { container } = renderChatPanel({ messages })
+    expect(container.querySelectorAll('.msg.a')).toHaveLength(1)
+    expect(container.querySelector('.tooltrace')).toHaveTextContent('recall')
+  })
+
+  it('still hides a truly empty assistant bubble (no content and no tools)', () => {
+    const messages: ChatMessage[] = [
+      { role: 'user', content: 'go' },
+      { role: 'assistant', content: '' },
+    ]
+    const { container } = renderChatPanel({ messages })
+    expect(container.querySelectorAll('.msg.a')).toHaveLength(0)
+  })
 })
