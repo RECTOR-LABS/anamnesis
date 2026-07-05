@@ -59,8 +59,9 @@ router = APIRouter()
 
 class ChatIn(BaseModel):
     message: str
-    mint: str | None = None  # forward-compat only: the agent recalls/investigates via its own
-    # tools from the message text, so this is accepted but not otherwise wired in yet.
+    mint: str | None = None  # appended to the user turn as a context clause when present (see
+    # _stream_chat) so the agent recalls/investigates the specific token; still optional — a
+    # general/no-mint question is valid too, in which case the content stays the bare message.
 
 
 def _content_text(content: object) -> str:
@@ -112,10 +113,16 @@ def _serialize(messages: list) -> dict:
     return out
 
 
-def _stream_chat(message: str) -> Iterator[dict]:
+def _stream_chat(message: str, mint: str | None) -> Iterator[dict]:
     """SYNC generator driving the agent turn. Wrapped in `iterate_in_threadpool` (RISK 2, see
     module docstring) before being handed to `EventSourceResponse` — never iterated directly on
     the event loop.
+
+    When `mint` is present it is appended to the user turn as a context clause (rather than a
+    separate system message) so it reaches the agent regardless of how qwen-agent's Assistant
+    handles a mid-conversation system role — the mint lands in the text the agent reasons over,
+    and its forensic tools take the mint from there. Absent a mint, `content` is the bare
+    `message`, unchanged (a general/no-mint question is still valid).
 
     Empty yields are skipped (`if not chunk: continue`) before indexing the last message in
     `_serialize` — qwen-agent's yields are normally non-empty, but this removes the sharp edge
@@ -125,7 +132,11 @@ def _stream_chat(message: str) -> Iterator[dict]:
     generic `event: error` frame and returns without emitting `done` — `error` is itself the
     terminal signal for the failed-turn path, so happy-path `done` must never also follow it.
     """
-    messages = [{"role": "user", "content": message}]
+    content = message if not mint else (
+        f"{message}\n\n(For context: the token under discussion is the SPL mint {mint}. "
+        "Recall what you know about it and its deployer, and investigate as needed.)"
+    )
+    messages = [{"role": "user", "content": content}]
     try:
         for chunk in deps.get_agent().run(messages):
             if not chunk:
@@ -143,4 +154,4 @@ def _stream_chat(message: str) -> Iterator[dict]:
 
 @router.post("/api/chat")
 def post_chat(body: ChatIn) -> EventSourceResponse:
-    return EventSourceResponse(iterate_in_threadpool(_stream_chat(body.message)))
+    return EventSourceResponse(iterate_in_threadpool(_stream_chat(body.message, body.mint)))

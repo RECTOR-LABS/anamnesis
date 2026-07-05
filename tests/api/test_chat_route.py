@@ -148,6 +148,19 @@ class FakeAgentYieldsEmptyListThenNormal:
         yield [{"role": "assistant", "content": "Analyzing the mint"}]
 
 
+class FakeAgentCapturesMessages:
+    """Records the `messages` argument `.run` is invoked with (on the instance) rather than
+    caring about streamed output, so a test can assert on the shape of the user turn the route
+    builds — in particular, whether/how `ChatIn.mint` gets folded into the message content."""
+
+    def __init__(self):
+        self.messages = None
+
+    def run(self, messages, **kwargs):
+        self.messages = messages
+        yield [{"role": "assistant", "content": "ok"}]
+
+
 def test_post_chat_streams_at_least_two_frames_then_done(monkeypatch):
     monkeypatch.setattr(deps, "get_agent", lambda: FakeAgent())
 
@@ -262,3 +275,33 @@ def test_post_chat_skips_empty_yielded_list_without_crashing(monkeypatch):
     frames, saw_done = _parse_sse(resp.text)
     assert frames == [{"role": "assistant", "content": "Analyzing the mint"}]
     assert saw_done
+
+
+def test_post_chat_injects_mint_into_user_turn_content(monkeypatch):
+    # The Fix A finding: a mint on the request must reach the agent's user turn so a follow-up
+    # like "why is this high risk?" resolves against the assessed token instead of the agent
+    # asking the user for a mint address it was already given.
+    agent = FakeAgentCapturesMessages()
+    monkeypatch.setattr(deps, "get_agent", lambda: agent)
+
+    resp = client.post(
+        "/api/chat",
+        json={"message": "why high risk?", "mint": "GYaSxx1111111111111111111111111111111pump"},
+    )
+
+    assert resp.status_code == 200
+    content = agent.messages[0]["content"]
+    assert "why high risk?" in content
+    assert "GYaSxx1111111111111111111111111111111pump" in content
+
+
+def test_post_chat_without_mint_sends_bare_message(monkeypatch):
+    # No mint on the request (a general/no-mint question is still valid) → the user turn must
+    # be the message exactly, with no context clause appended.
+    agent = FakeAgentCapturesMessages()
+    monkeypatch.setattr(deps, "get_agent", lambda: agent)
+
+    resp = client.post("/api/chat", json={"message": "hello"})
+
+    assert resp.status_code == 200
+    assert agent.messages[0]["content"] == "hello"
