@@ -79,7 +79,7 @@ def test_build_agent_assembles_native_and_mcp_tools(monkeypatch):
     # listing/registering tools does no network I/O, so a dummy key suffices.
     # Skipped in CI, which installs neither qwen-agent nor mcp.
     pytest.importorskip("qwen_agent")
-    pytest.importorskip("mcp")
+    pytest.importorskip("mcp.server.fastmcp")  # the SDK, not the repo's local mcp/ namespace dir
     monkeypatch.setenv("ANAMNESIS_DASHSCOPE_API_KEY", "dummy-key-for-construction")
     monkeypatch.setenv("ANAMNESIS_HELIUS_API_KEY", "dummy-key-for-construction")
     from anamnesis.agent.agent import build_agent

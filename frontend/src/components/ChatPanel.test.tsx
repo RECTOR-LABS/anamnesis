@@ -1,0 +1,74 @@
+import type { ComponentProps } from 'react'
+import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { ChatPanel } from './ChatPanel'
+import type { ChatMessage } from '../hooks/useChatStream'
+
+/** Renders `<ChatPanel>` with sane controlled-prop defaults (no messages, not streaming, a no-op
+ * handler), letting each test override just the prop(s) it cares about — mirrors the
+ * `renderCommandBar` helper convention in `CommandBar.test.tsx`. */
+function renderChatPanel(overrides: Partial<ComponentProps<typeof ChatPanel>> = {}) {
+  return render(<ChatPanel messages={[]} streaming={false} onSend={vi.fn()} {...overrides} />)
+}
+
+describe('ChatPanel', () => {
+  it('renders a user bubble and an assistant bubble from the message list', () => {
+    const messages: ChatMessage[] = [
+      { role: 'user', content: 'is this a rug?' },
+      { role: 'assistant', content: 'checking memory now' },
+    ]
+    const { container } = renderChatPanel({ messages })
+
+    const bubbles = container.querySelectorAll('.msg')
+    expect(bubbles).toHaveLength(2)
+
+    expect(bubbles[0]).not.toHaveClass('a')
+    expect(bubbles[0]).toHaveTextContent('YOU')
+    expect(bubbles[0]).toHaveTextContent('is this a rug?')
+
+    expect(bubbles[1]).toHaveClass('msg', 'a')
+    expect(bubbles[1]).toHaveTextContent('◈')
+    expect(bubbles[1]).toHaveTextContent('checking memory now')
+  })
+
+  it('renders no bubbles when messages is empty', () => {
+    const { container } = renderChatPanel()
+    expect(container.querySelectorAll('.msg')).toHaveLength(0)
+  })
+
+  it('submits the trimmed input via onSend and clears the field', () => {
+    const onSend = vi.fn()
+    renderChatPanel({ onSend })
+
+    const input = screen.getByLabelText('Ask a follow-up') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '  what did you know last week?  ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+
+    expect(onSend).toHaveBeenCalledWith('what did you know last week?')
+    expect(input.value).toBe('')
+  })
+
+  it('does not call onSend for an empty or whitespace-only input', () => {
+    const onSend = vi.fn()
+    renderChatPanel({ onSend })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+    expect(onSend).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByLabelText('Ask a follow-up'), { target: { value: '   ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it('disables the input and send button while streaming', () => {
+    renderChatPanel({ streaming: true })
+
+    expect(screen.getByLabelText('Ask a follow-up')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
+  })
+
+  it('renders a chat-error message when error is set', () => {
+    renderChatPanel({ error: 'boom' })
+    expect(screen.getByText('Chat error — boom')).toBeInTheDocument()
+  })
+})

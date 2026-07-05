@@ -7,7 +7,8 @@ Alibaba ECS**. Target cost: **$0** via the free-trial / new-user credit.
 
 Once the ECS exists and you can SSH in, this is ~10 copy-paste steps. Artifacts referenced:
 `Dockerfile`, `docker-compose.yml`, and one nginx vhost — `deploy/nginx/anamnesis-cloudflare.conf`
-(Cloudflare Origin CA, step 7A) or `deploy/nginx/anamnesis.conf` (Let's Encrypt, step 7B).
+(Cloudflare Origin CA, step 7A) or `deploy/nginx/anamnesis.conf` (Let's Encrypt, step 7B). One
+container serves the React dashboard at `/` and the API at `/api/*` (`uvicorn api.main:app`).
 
 ## 0. Prerequisites (local)
 
@@ -94,8 +95,6 @@ QWEN_MODEL=qwen-max
 # self-hosted Mongo (compose creates this root user; the app URI is built from it)
 MONGO_USER=anamnesis
 MONGO_PASSWORD=<a strong ALPHANUMERIC password — @ : / # ? break the mongodb:// URI>
-# public URL for cluster-graph links (matches the nginx /graphs/ location)
-ANAMNESIS_GRAPHS_BASE_URL=https://anamnesis.<your-domain>/graphs
 ```
 
 `ANAMNESIS_MONGODB_URI` is **not** needed here — compose builds it from `MONGO_USER/PASSWORD` and
@@ -106,15 +105,15 @@ points the app at the self-hosted `mongo` service.
 ```bash
 docker compose up -d --build
 docker compose ps              # app + mongo (mongo healthy)
-docker compose logs -f app     # watch for "Running on ... :7860"
+docker compose logs -f app     # watch for "Uvicorn running on http://0.0.0.0:8000"
 docker image prune -f          # reclaim the dangling build layer
 ```
 
 Confirm the security boundary — **mongo must NOT be on `0.0.0.0`** (it should have no host port):
 
 ```bash
-docker ps --format '{{.Names}}\t{{.Ports}}' | grep -E '27017|7860|7866'
-# app ports show 127.0.0.1:7860/7866 ; mongo shows no published port
+docker ps --format '{{.Names}}\t{{.Ports}}' | grep -E '27017|8000'
+# app shows 127.0.0.1:8000 ; mongo shows no published port
 ```
 
 ## 7. nginx + TLS
@@ -168,14 +167,15 @@ docker compose exec app python scripts/seed_demo.py
 docker compose exec app python scripts/seed_demo.py --metric   # capture the hosted N× number
 ```
 
-Open `https://anamnesis.<your-domain>`, click the **GYaS…** suggestion → expect an instant **HIGH
-from memory**, then ask for the cluster graph (link resolves under `/graphs/`).
+Open `https://anamnesis.<your-domain>`, paste the **GYaS…** mint and hit **Scan** → expect an
+instant **HIGH from memory** (the verdict hero) alongside the cluster graph, evidence cards, and the
+memory-aware chat — all on the dashboard.
 
 ## 9. Capture submission proof (S.4)
 
 - Alibaba console: the ECS instance (region, public IP) + the DashScope/Model-Studio key page.
 - Terminal: `docker compose ps` on the ECS; the `--metric` output (hosted N×).
-- Browser: the hosted WebUI showing the HIGH-from-memory verdict + cluster graph at your domain.
+- Browser: the hosted dashboard showing the HIGH-from-memory verdict + cluster graph at your domain.
 
 ## 10. Ongoing deploys
 
@@ -192,3 +192,4 @@ Optional CI (set repo secrets `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_APP_PA
 - After any ECS rebuild/reimage, re-check `sudo sshd -T | grep passwordauthentication` (cloud-init
   drop-ins silently re-enable password auth).
 - `docker image prune -f` after each deploy — never `docker system prune` (it nukes unrelated data).
+```
