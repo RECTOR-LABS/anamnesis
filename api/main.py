@@ -19,6 +19,7 @@ from api.routes.chat import router as chat_router
 from api.routes.deployer import router as deployer_router
 from api.routes.funding import router as funding_router
 from api.routes.graph import router as graph_router
+from api.routes.graph_static import router as graph_static_router
 from api.routes.price import router as price_router
 from api.routes.profile import router as profile_router
 
@@ -44,6 +45,7 @@ app.include_router(chat_router)
 app.include_router(deployer_router)
 app.include_router(funding_router)
 app.include_router(graph_router)
+app.include_router(graph_static_router)
 app.include_router(price_router)
 app.include_router(profile_router)
 
