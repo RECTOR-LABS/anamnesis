@@ -41,7 +41,11 @@ export function useChatStream(): UseChatStreamResult {
         message,
         mint,
         (e) => {
-          if (e.role !== 'assistant') return
+          // Skip non-assistant frames AND empty-content assistant frames: qwen-agent emits a
+          // content-less assistant frame while a forensic tool is in flight (it carries only the
+          // `tool` affordance), and under cumulative-REPLACE that would blank the streamed bubble
+          // mid-turn — a visible flash on every tool call. The bubble fills from the next text frame.
+          if (e.role !== 'assistant' || e.content === '') return
           setMessages((m) => {
             const copy = m.slice()
             for (let i = copy.length - 1; i >= 0; i--) {

@@ -1,5 +1,6 @@
 import type { DeployerHistory as DeployerHistoryData, MemoryRug } from '../types'
 import { Card } from './Card'
+import { shortAddr } from '../format'
 
 interface DeployerHistoryProps {
   history: DeployerHistoryData // GET /api/deployer/{mint} shape
@@ -19,11 +20,6 @@ const INFO = (
  * 'alive'≈0.) */
 const ALIVE_COUNT = 0
 
-/** Truncates an address to the mockup's `sF2ww…dZkMvv` form. Kept local to this file: T13's
- * `shortMint` is the identical form, but cross-file coupling for a 1-line pure fn isn't worth it
- * across independently-built SDD tasks — the final review will decide whether to extract a
- * shared `formatAddr`. */
-const shortAddr = (a: string) => (a.length > 13 ? `${a.slice(0, 5)}…${a.slice(-6)}` : a)
 
 /** The Deployer history card — pro-only serial-launch pattern, from mockup v4 (lines 229-237): a
  * tile strip of every token this wallet has launched (this-token / known-rug / presumed-dead)

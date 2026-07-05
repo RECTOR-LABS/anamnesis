@@ -38,14 +38,19 @@ export function ChatPanel({ messages, streaming, onSend, error }: ChatPanelProps
       }
       className="anim pro-only"
     >
-      {messages.map((m, i) => (
-        <div className={m.role === 'assistant' ? 'msg a' : 'msg'} key={i}>
-          <div className={m.role === 'assistant' ? 'av a' : 'av u'}>
-            {m.role === 'assistant' ? '◈' : 'YOU'}
+      {messages
+        // Don't render an empty assistant bubble: the optimistic placeholder appended on send
+        // stays empty if the turn errors before any text arrives (or yields only tool frames),
+        // which would otherwise show a stray ◈ avatar over a blank <p> next to the error note.
+        .filter((m) => m.role !== 'assistant' || m.content !== '')
+        .map((m, i) => (
+          <div className={m.role === 'assistant' ? 'msg a' : 'msg'} key={i}>
+            <div className={m.role === 'assistant' ? 'av a' : 'av u'}>
+              {m.role === 'assistant' ? '◈' : 'YOU'}
+            </div>
+            <p>{m.content}</p>
           </div>
-          <p>{m.content}</p>
-        </div>
-      ))}
+        ))}
       {error && (
         <p className="clean-note" style={{ color: 'var(--high)' }}>
           Chat error — {error}

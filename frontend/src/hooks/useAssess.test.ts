@@ -65,7 +65,7 @@ describe('useAssess', () => {
     expect(result.current.verdict?.mint).toBe('MINT1')
   })
 
-  it('on rejection sets the error message, clears loading, and leaves the prior verdict untouched', async () => {
+  it('on rejection sets the error message, clears loading, and clears the prior verdict', async () => {
     mockedAssess.mockResolvedValueOnce(makeVerdict({ mint: 'MINT_OK' }))
     const { result } = renderHook(() => useAssess())
 
@@ -83,7 +83,7 @@ describe('useAssess', () => {
 
     expect(result.current.error).toBe('network down')
     expect(result.current.loading).toBe(false)
-    expect(result.current.verdict?.mint).toBe('MINT_OK')
+    expect(result.current.verdict).toBe(null) // never leave the prior token's verdict under a failure
   })
 
   it('race guard: an older run resolving after a newer one does not clobber the newer verdict', async () => {

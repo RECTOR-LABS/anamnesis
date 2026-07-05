@@ -28,6 +28,7 @@ export function useCountUp(target: number, opts?: { duration?: number; delay?: n
   const delay = opts?.delay ?? DEFAULT_DELAY
   const skipAnimation =
     prefersReducedMotion() ||
+    duration <= 0 || // a non-positive duration would make (now-start)/duration NaN/±∞ — show target
     typeof window === 'undefined' ||
     typeof window.requestAnimationFrame !== 'function'
   const [value, setValue] = useState(() => (skipAnimation ? target : 0))

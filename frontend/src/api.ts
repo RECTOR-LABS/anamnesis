@@ -53,49 +53,36 @@ export function assess(mint: string): Promise<Verdict> {
   })
 }
 
-/** Degrades to the backend's own `{mint, error}` shape (see `Profile.error`) on any failure —
- * including a lazy-read timeout — instead of rejecting, so the card renders its existing
- * "unavailable" state promptly rather than the caller hanging or having to handle a rejection. */
-export async function getProfile(mint: string): Promise<Profile> {
+/** A lazy per-card GET that DEGRADES to the backend's own `{mint, error}` shape (see e.g.
+ * `Profile.error`) on any failure — including a `LAZY_TIMEOUT_MS` timeout — instead of rejecting,
+ * so the card renders its existing "unavailable" state promptly rather than the caller hanging or
+ * having to handle a rejection. Shared by `getProfile`/`getDeployer`/`getFunding`, whose only
+ * differences are the URL segment, the log label, and the (degrade-shaped) return type — keeping
+ * the degrade contract in one place so the three cards can never drift apart. */
+async function lazyDegradable<T extends { mint: string; error?: string }>(
+  segment: string,
+  mint: string,
+): Promise<T> {
   try {
-    return await requestJson<Profile>(
-      `${BASE_URL}/profile/${encodeURIComponent(mint)}`,
-      'profile',
+    return await requestJson<T>(
+      `${BASE_URL}/${segment}/${encodeURIComponent(mint)}`,
+      segment,
       undefined,
       LAZY_TIMEOUT_MS,
     )
   } catch {
-    return { mint, error: 'request timed out' } as Profile
+    return { mint, error: 'request timed out' } as T
   }
 }
 
-/** Degrades to the backend's own `{mint, error}` shape on any failure — see `getProfile`. */
-export async function getDeployer(mint: string): Promise<DeployerHistory> {
-  try {
-    return await requestJson<DeployerHistory>(
-      `${BASE_URL}/deployer/${encodeURIComponent(mint)}`,
-      'deployer',
-      undefined,
-      LAZY_TIMEOUT_MS,
-    )
-  } catch {
-    return { mint, error: 'request timed out' } as DeployerHistory
-  }
-}
+export const getProfile = (mint: string): Promise<Profile> =>
+  lazyDegradable<Profile>('profile', mint)
 
-/** Degrades to the backend's own `{mint, error}` shape on any failure — see `getProfile`. */
-export async function getFunding(mint: string): Promise<Funding> {
-  try {
-    return await requestJson<Funding>(
-      `${BASE_URL}/funding/${encodeURIComponent(mint)}`,
-      'funding',
-      undefined,
-      LAZY_TIMEOUT_MS,
-    )
-  } catch {
-    return { mint, error: 'request timed out' } as Funding
-  }
-}
+export const getDeployer = (mint: string): Promise<DeployerHistory> =>
+  lazyDegradable<DeployerHistory>('deployer', mint)
+
+export const getFunding = (mint: string): Promise<Funding> =>
+  lazyDegradable<Funding>('funding', mint)
 
 /** No degrade shape (`GraphData` isn't degrade-shaped) — keeps throwing on timeout/failure, same
  * as any other fetch failure; App's `.catch` maps that rejection to `null`, so the ClusterGraph
@@ -170,9 +157,11 @@ function parseErrorMessage(data: string): string {
  * separated by a blank line, which may land split across chunk boundaries, so incoming bytes are
  * buffered and only complete frames are ever parsed out of it. The backend (`sse-starlette`,
  * driving `api/routes/chat.py`) frames on `\r\n` — its `DEFAULT_SEPARATOR` — so real frames end
- * in `\r\n\r\n`, not bare `\n\n`; every decoded chunk is normalized (CRLF/lone-CR to LF, the full
- * set of line endings the SSE spec permits) before the `\n\n` boundary search below, so parsing
- * works against the real backend as well as any bare-`\n`-framed producer.
+ * in `\r\n\r\n`, not bare `\n\n`. Raw bytes are buffered and the blank-line boundary is matched on
+ * the RAW buffer (`\r\n\r\n`/`\n\n`/`\r\r`), so a `\r\n` split across two network reads is never
+ * mistaken for a boundary; each COMPLETE frame is then normalized to `\n` for parsing — which works
+ * against the real backend as well as any bare-`\n`-framed producer. An idle-abort (see below)
+ * cuts a stalled connection loose so a missing terminal frame can't hang the turn forever.
  *
  * Every transport/protocol failure (network failure, non-2xx, a dropped connection mid-stream, a
  * malformed event payload, or the stream ending without a terminal event) resolves through
@@ -187,18 +176,35 @@ export async function streamChat(
   onDone: () => void,
   onError: (msg: string) => void,
 ): Promise<void> {
+  // Idle-abort: unlike the lazy reads' fixed 20s cap, a chat turn can legitimately run a while
+  // (multi-step agent: Qwen round-trips + MCP + live Helius). So this aborts only after IDLE_MS
+  // with NO bytes at all — data OR sse-starlette's keep-alive pings. A slow-but-alive turn keeps
+  // resetting the clock; a truly dead connection (proxy/threadpool stall) is cut loose so the
+  // caller's `streaming` flag can't wedge true forever with no `done`/`error` ever arriving.
+  const IDLE_MS = 60000
+  const ctrl = new AbortController()
+  let idle: ReturnType<typeof setTimeout> | undefined
+  const resetIdle = () => {
+    if (idle) clearTimeout(idle)
+    idle = setTimeout(() => ctrl.abort(), IDLE_MS)
+  }
+
   let res: Response
+  resetIdle()
   try {
     res = await fetch(`${BASE_URL}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, mint }),
+      signal: ctrl.signal,
     })
   } catch {
-    onError('chat failed: network error')
+    if (idle) clearTimeout(idle)
+    onError(ctrl.signal.aborted ? 'chat stream timed out' : 'chat failed: network error')
     return
   }
   if (!res.ok || !res.body) {
+    if (idle) clearTimeout(idle)
     onError(`chat failed: ${res.status}`)
     return
   }
@@ -216,19 +222,24 @@ export async function streamChat(
       try {
         step = await reader.read()
       } catch {
-        onError('chat stream failed: connection lost')
+        onError(ctrl.signal.aborted ? 'chat stream timed out' : 'chat stream failed: connection lost')
         return
       }
+      resetIdle() // got bytes (a real frame OR a keep-alive ping) — the connection is alive
       if (step.done) break
-      // sse-starlette frames on "\r\n" (see the docstring above), not bare "\n" — normalize
-      // CRLF/lone-CR to LF immediately, before any boundary search, so the "\n\n" frame split
-      // and per-line parsing below work regardless of which line ending this chunk carries.
-      buf += decoder.decode(step.value, { stream: true }).replace(/\r\n|\r/g, '\n')
+      // Append the RAW decoded chunk (no per-chunk CR/LF rewrite): the blank-line boundary is
+      // matched on the raw buffer below, so a "\r\n" split across two network reads is never
+      // mistaken for a boundary — we wait for the full delimiter. (A per-chunk normalize would
+      // turn a lone trailing "\r" into "\n", then the next chunk's "\n" into a false "\n\n"
+      // boundary, severing a multi-line event:+data: frame.)
+      buf += decoder.decode(step.value, { stream: true })
 
-      let idx: number
-      while ((idx = buf.indexOf('\n\n')) !== -1) {
-        const frame = buf.slice(0, idx)
-        buf = buf.slice(idx + 2)
+      // Blank-line boundary: sse-starlette frames on "\r\n" (so "\r\n\r\n"); also accept a
+      // bare-"\n\n" or "\r\r" producer. Each COMPLETE frame is normalized to "\n" before parsing.
+      let m: RegExpExecArray | null
+      while ((m = /\r\n\r\n|\n\n|\r\r/.exec(buf)) !== null) {
+        const frame = buf.slice(0, m.index).replace(/\r\n|\r/g, '\n')
+        buf = buf.slice(m.index + m[0].length)
         if (frame.trim() === '') {
           continue // keep-alive / comment-only frame — nothing to project onto the wire
         }
@@ -261,6 +272,7 @@ export async function streamChat(
     // instead of silently dropping them.
     buf += decoder.decode()
   } finally {
+    if (idle) clearTimeout(idle)
     await reader.cancel().catch(() => {})
   }
 

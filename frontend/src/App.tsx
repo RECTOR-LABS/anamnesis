@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import type {
   DeployerHistory as DeployerHistoryData,
   Funding,
@@ -21,14 +21,10 @@ import { ClusterGraph } from './components/ClusterGraph'
 import { FundingTrail } from './components/FundingTrail'
 import { AutopilotActions } from './components/AutopilotActions'
 import { ChatPanel } from './components/ChatPanel'
+import { shortAddr } from './format'
 
 // Pre-filled so SCAN works out-of-box for the demo.
 const DEMO_MINT = 'GYaS5YyD9jMGSFAFA7Q9MCCpcUpmf3YtutEDrZRpump'
-
-/** Truncates a mint/pubkey to the mockup's `3qFSo…KY3pump` form. Kept local (not a shared util) —
- * same rationale as `EvidenceCard`/`DeployerHistory`'s own module-private copies: a second call
- * site doesn't yet justify promoting a 1-line pure fn to a shared helper. */
-const shortMint = (m: string) => (m.length > 13 ? `${m.slice(0, 5)}…${m.slice(-6)}` : m)
 
 // Client-side mint-format guard (T19). The engine never emits a `level:"N/A"` verdict — a garbage
 // mint still returns a real LOW verdict, and a malformed one errors — so "invalid input" has no
@@ -77,30 +73,35 @@ export default function App() {
     run(mint)
   }
 
-  // Lazy per-token reads, fired once a verdict lands. Cleared at the top of the effect so NO card
-  // ever shows a stale cross-token read (forensic correctness — matches the engine's
-  // fresh-per-request stance). `alive` guards every setter so a superseded effect instance (a
-  // second scan landing before the first token's reads finish) can never commit into the newer
-  // token's cards.
+  // Lazy per-token reads, fired once a verdict lands. `price` is nullable: null means "not loaded
+  // yet / failed" (Sparkline renders nothing), distinct from [] which means "loaded, genuinely no
+  // series" (Sparkline's honest "no recent price activity" note) — so a still-loading or errored
+  // price never shows as a false dead-token claim.
   const [graph, setGraph] = useState<GraphData | null>(null)
-  const [price, setPrice] = useState<PricePoint[]>([])
+  const [price, setPrice] = useState<PricePoint[] | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [deployerHist, setDeployerHist] = useState<DeployerHistoryData | null>(null)
   const [funding, setFunding] = useState<Funding | null>(null)
 
-  useEffect(() => {
-    if (!verdict) return
-    let alive = true
+  // Clear the previous token's lazy reads SYNCHRONOUSLY (pre-paint) the instant a new verdict lands,
+  // so a re-scan never paints even one frame of the old token's price/profile/graph/funding under
+  // the new verdict (forensic correctness). A passive useEffect clears only AFTER that stale frame
+  // is painted — hence useLayoutEffect here, useEffect for the async fetch below.
+  useLayoutEffect(() => {
     setGraph(null)
-    setPrice([])
+    setPrice(null)
     setProfile(null)
     setDeployerHist(null)
     setFunding(null)
+  }, [verdict])
 
+  useEffect(() => {
+    if (!verdict) return
+    let alive = true
     const m = verdict.mint
     getPrice(m)
       .then((p) => alive && setPrice(p))
-      .catch(() => alive && setPrice([]))
+      .catch(() => alive && setPrice(null))
     getProfile(m)
       .then((p) => alive && setProfile(p))
       .catch(() => alive && setProfile(null))
@@ -133,7 +134,7 @@ export default function App() {
       />
       <div className="ctx">
         <span>
-          <b>token</b>&nbsp; {shortMint(mint)}
+          <b>token</b>&nbsp; {shortAddr(mint)}
         </span>
         <span className="sep">/</span>
         <span>

@@ -1,17 +1,12 @@
 import type { Verdict } from '../types'
 import { Card } from './Card'
 import { SeverityDot } from './SeverityDot'
+import { shortAddr } from '../format'
 
 interface EvidenceCardProps {
   verdict: Verdict // supplies memory_rugs[] and signals[]
   topHolderPct?: number | null // the holder-concentration bar %; from Profile.top_holder_pct
 }
-
-/** Truncates a mint/pubkey to the mockup's `3qFSo…KY3pump` form. Kept local to this file (not a
- * shared util): T15 also truncates addresses, but to a different form, and extracting a shared
- * helper now — before a second call site actually agrees on shape — would be premature
- * abstraction. */
-const shortMint = (m: string) => (m.length > 13 ? `${m.slice(0, 5)}…${m.slice(-6)}` : m)
 
 /** The Evidence card — pro-only "receipts" behind the verdict — from mockup v4 (lines 215-227):
  * memory rugs (first-party, always HIGH) plus live on-chain signals, with a holder-concentration
@@ -44,7 +39,7 @@ export function EvidenceCard({ verdict, topHolderPct }: EvidenceCardProps) {
           {verdict.memory_rugs.map((rug) => (
             <div className="row" key={rug.mint}>
               <SeverityDot severity="high" />
-              <span className="rk">{shortMint(rug.mint)}</span>
+              <span className="rk">{shortAddr(rug.mint)}</span>
               <span className="rd">rugged</span>
               <span className="rx">
                 {rug.date ?? '—'} <span className="chev">›</span>

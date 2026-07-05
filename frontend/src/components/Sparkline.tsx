@@ -1,14 +1,19 @@
 import type { PricePoint } from '../types'
 
 interface SparklineProps {
-  points: PricePoint[]
+  points: PricePoint[] | null
 }
 
 /** A tiny price polyline rendered under the verdict — not in mockup v4 (a sanctioned scope
  * addition per the T16 brief), so it has no mockup markup and no CSS class: styled entirely with
  * inline SVG attributes to keep the "no new CSS" constraint intact. Pure presentational, driven
- * entirely by `points`; App wires in `GET /api/price`'s `PricePoint[]` in T18. */
+ * entirely by `points`; App wires in `GET /api/price`'s `PricePoint[]` in T18. `null` means the
+ * price hasn't loaded (or the read failed) — render nothing, NOT the "no activity" note, so a
+ * pending/errored fetch is never mistaken for a genuinely dead token. */
 export function Sparkline({ points }: SparklineProps) {
+  if (points == null) {
+    return null
+  }
   if (points.length < 2) {
     // Can't draw a line from fewer than 2 points — a dead token with no price series is itself a
     // signal, so render a subtle, honest note instead of silently rendering nothing.

@@ -12,7 +12,9 @@ export interface UseAssessResult {
 /** Drives `POST /api/assess` for the CommandBar's SCAN action. `verdict` is intentionally NOT
  * cleared when a new `run` starts — it stays in state across the re-run rather than resetting to
  * null (App itself renders a scanning skeleton in place of it while `loading`, per T19).
- * `error` IS cleared at the start of each run, since a fresh scan deserves a fresh chance.
+ * `error` IS cleared at the start of each run, since a fresh scan deserves a fresh chance. On a
+ * FAILED scan `verdict` IS cleared, though: a forensic tool must never leave the previous token's
+ * risk verdict on screen under the new token's "scan failed" banner.
  *
  * `latest` is a monotonic request id guarding against out-of-order responses: if the user fires a
  * second scan before the first one's request resolves, only the response whose id still matches
@@ -36,6 +38,7 @@ export function useAssess(): UseAssessResult {
       })
       .catch((e) => {
         if (id !== latest.current) return
+        setVerdict(null) // drop any prior token's verdict — never show it under this scan's error
         setError(e instanceof Error ? e.message : 'assess failed')
         setLoading(false)
       })

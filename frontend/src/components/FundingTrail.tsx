@@ -1,5 +1,6 @@
 import type { Funding } from '../types'
 import { Card } from './Card'
+import { shortAddr } from '../format'
 
 interface FundingTrailProps {
   funding: Funding
@@ -12,10 +13,6 @@ const INFO = (
   </>
 )
 
-/** Truncates an address to the mockup's `sF2ww…dZkMvv` form. Kept local to this file: same form
- * as `DeployerHistory`'s module-private `shortAddr` — cross-file coupling for a 1-line pure fn
- * isn't worth it across independently-built SDD tasks. */
-const shortAddr = (a: string) => (a.length > 13 ? `${a.slice(0, 5)}…${a.slice(-6)}` : a)
 
 /** The Funding trail card — pro-only, from mockup v4 (lines 280-287): a 3-node trace (origin →
  * funder → deployer) showing where the deployer's launch capital came from. The engine traces
