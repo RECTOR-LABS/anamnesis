@@ -56,3 +56,34 @@ jobs:
       # same command hits live ApsaraDB.
       - name: Test — Mongo store contract (mongomock)
         run: pytest -q --store=mongo
+
+  # The dashboard (frontend/) is what the ECS build actually ships (Dockerfile's node stage runs
+  # `npm run build`). Gate it on every PR so a failing vitest, a `tsc -b` type error (strict is on),
+  # or an oxlint violation fails HERE, not later at `docker compose up -d --build` on the box. Also
+  # exercises `npm ci` on Linux — the lockfile carries the cross-platform optional deps for it.
+  frontend:
+    name: frontend (build + test + lint)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install (npm ci)
+        run: npm ci
+
+      - name: Test (vitest)
+        run: npm run test
+
+      - name: Type-check + build (tsc -b + vite build)
+        run: npm run build
+
+      - name: Lint (oxlint)
+        run: npm run lint
