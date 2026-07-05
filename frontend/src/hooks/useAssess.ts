@@ -10,8 +10,8 @@ export interface UseAssessResult {
 }
 
 /** Drives `POST /api/assess` for the CommandBar's SCAN action. `verdict` is intentionally NOT
- * cleared when a new `run` starts — the dashboard keeps showing the prior verdict alongside a
- * loading cue instead of flashing back to empty (the scanning skeleton itself is a later task).
+ * cleared when a new `run` starts — it stays in state across the re-run rather than resetting to
+ * null (App itself renders a scanning skeleton in place of it while `loading`, per T19).
  * `error` IS cleared at the start of each run, since a fresh scan deserves a fresh chance.
  *
  * `latest` is a monotonic request id guarding against out-of-order responses: if the user fires a

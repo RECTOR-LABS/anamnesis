@@ -66,4 +66,9 @@ describe('ChatPanel', () => {
     expect(screen.getByLabelText('Ask a follow-up')).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled()
   })
+
+  it('renders a chat-error message when error is set', () => {
+    renderChatPanel({ error: 'boom' })
+    expect(screen.getByText('Chat error — boom')).toBeInTheDocument()
+  })
 })

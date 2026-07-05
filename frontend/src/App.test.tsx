@@ -181,4 +181,77 @@ describe('App', () => {
     expect(screen.getByText(/Paste a token mint and press SCAN/)).toBeInTheDocument()
     expect(container.querySelector('.verdict')).not.toBeInTheDocument()
   })
+
+  it('shows an invalid-mint message and does not call assess for a malformed mint', async () => {
+    render(<App />)
+
+    fireEvent.change(screen.getByLabelText('Token mint address'), { target: { value: 'not-a-mint' } })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'SCAN' }))
+    })
+
+    expect(screen.getByText(/look like a Solana mint address/)).toBeInTheDocument()
+    expect(mockedAssess).not.toHaveBeenCalled()
+  })
+
+  it('still scans a valid 44-char base58 mint (guards against an over-eager validator)', async () => {
+    render(<App />)
+
+    fireEvent.change(screen.getByLabelText('Token mint address'), { target: { value: MINT } })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'SCAN' }))
+    })
+
+    expect(mockedAssess).toHaveBeenCalledWith(MINT)
+  })
+
+  it('shows skeleton cards in both columns while a scan is in flight, chat unaffected', async () => {
+    mockedAssess.mockReturnValueOnce(new Promise(() => {})) // never resolves — stays in `loading`
+    const { container } = render(<App />)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'SCAN' }))
+    })
+
+    expect(container.querySelectorAll('.skel-card').length).toBe(4) // 2 columns × 2 SkeletonCards
+    expect(container.querySelector('.verdict')).not.toBeInTheDocument()
+    // ChatPanel renders regardless of the scan being in flight.
+    expect(screen.getByLabelText('Ask a follow-up')).toBeInTheDocument()
+  })
+
+  it('retries the scan through the Retry button after a failed scan', async () => {
+    mockedAssess.mockRejectedValueOnce(new Error('network down'))
+    render(<App />)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'SCAN' }))
+    })
+
+    expect(await screen.findByText(/Scan failed/)).toHaveTextContent('Scan failed — network down')
+    expect(mockedAssess).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    })
+
+    expect(mockedAssess).toHaveBeenCalledTimes(2)
+  })
+
+  it('suppresses the stale scan-failed banner once a format error takes over', async () => {
+    mockedAssess.mockRejectedValueOnce(new Error('network down'))
+    render(<App />)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'SCAN' }))
+    })
+    expect(await screen.findByText(/Scan failed/)).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Token mint address'), { target: { value: 'not-a-mint' } })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'SCAN' }))
+    })
+
+    expect(screen.getByText(/look like a Solana mint address/)).toBeInTheDocument()
+    expect(screen.queryByText(/Scan failed/)).not.toBeInTheDocument()
+  })
 })

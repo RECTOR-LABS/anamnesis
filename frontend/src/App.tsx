@@ -30,6 +30,26 @@ const DEMO_MINT = 'GYaS5YyD9jMGSFAFA7Q9MCCpcUpmf3YtutEDrZRpump'
  * site doesn't yet justify promoting a 1-line pure fn to a shared helper. */
 const shortMint = (m: string) => (m.length > 13 ? `${m.slice(0, 5)}…${m.slice(-6)}` : m)
 
+// Client-side mint-format guard (T19). The engine never emits a `level:"N/A"` verdict — a garbage
+// mint still returns a real LOW verdict, and a malformed one errors — so "invalid input" has no
+// server-side signal to key off. Base58 + Solana pubkey length is the only mechanism that actually
+// catches it before wasting a round-trip on something that was never a mint to begin with.
+const MINT_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
+const isValidMint = (m: string) => MINT_RE.test(m.trim())
+
+/** A content-free placeholder for a verdict-gated card, shown in both grid columns while a scan
+ * is in flight. Local to App (no separate file) — same rationale as the module-private helpers
+ * above: nothing else needs it yet. */
+function SkeletonCard() {
+  return (
+    <div className="card skel-card" aria-hidden="true">
+      <div className="skel-bar" style={{ height: 14, width: '40%', marginBottom: 12 }} />
+      <div className="skel-bar" style={{ height: 44, marginBottom: 10 }} />
+      <div className="skel-bar" style={{ height: 14, width: '70%' }} />
+    </div>
+  )
+}
+
 /** The dashboard root — composes the full mockup v4 layout from the primitives/cards/hooks built
  * in prior tasks, wired to the live `api.ts` client. `mode` is pure presentation: it only ever
  * flips `.wrap`'s CSS class (`mode-lite`/`mode-pro`); it never gates JSX, since `.pro-only`
@@ -39,8 +59,23 @@ const shortMint = (m: string) => (m.length > 13 ? `${m.slice(0, 5)}…${m.slice(
 export default function App() {
   const [mint, setMint] = useState(DEMO_MINT)
   const [mode, setMode] = useState<Mode>('lite')
+  const [formatError, setFormatError] = useState<string | null>(null)
   const { verdict, loading, error, run } = useAssess()
   const chat = useChatStream()
+
+  // Client-side gate in front of `run`: a malformed mint never reaches the API — it just shows an
+  // amber format hint. Reused by the Retry button, so Retry re-validates rather than blindly
+  // replaying whatever the last request was.
+  const onScan = () => {
+    if (!isValidMint(mint)) {
+      setFormatError(
+        'That doesn’t look like a Solana mint address — check the format (base58, 32–44 characters).',
+      )
+      return
+    }
+    setFormatError(null)
+    run(mint)
+  }
 
   // Lazy per-token reads, fired once a verdict lands. Cleared at the top of the effect so NO card
   // ever shows a stale cross-token read (forensic correctness — matches the engine's
@@ -91,7 +126,7 @@ export default function App() {
       <CommandBar
         mint={mint}
         onMintChange={setMint}
-        onScan={() => run(mint)}
+        onScan={onScan}
         scanning={loading}
         mode={mode}
         onModeChange={setMode}
@@ -106,38 +141,65 @@ export default function App() {
         </span>
       </div>
       <MemoryBand />
-      {/* MINIMAL states only — the polished scanning/invalid/error states are T19. Just don't
-          look broken. */}
-      {error && (
-        <div className="ctx" style={{ color: 'var(--high)' }}>
-          Scan failed — {error}
-        </div>
+      {formatError && (
+        <p className="clean-note" style={{ color: 'var(--med)' }}>
+          {formatError}
+        </p>
       )}
-      {!verdict && !loading && !error && (
-        <div className="ctx">Paste a token mint and press SCAN to begin.</div>
+      {error && !loading && !formatError && (
+        <p className="clean-note" style={{ color: 'var(--high)' }}>
+          Scan failed — {error}{' '}
+          <button type="button" className="scan" style={{ marginLeft: 8 }} onClick={onScan}>
+            Retry
+          </button>
+        </p>
+      )}
+      {!verdict && !loading && !error && !formatError && (
+        <p className="clean-note">Paste a token mint and press SCAN to begin.</p>
       )}
       <div className="grid">
         <div className="col">
-          {verdict && <VerdictCard verdict={verdict} />}
-          {verdict && <Sparkline points={price} />}
-          {verdict && <EvidenceCard verdict={verdict} topHolderPct={profile?.top_holder_pct ?? null} />}
-          {verdict && deployerHist && (
-            <DeployerHistory
-              history={deployerHist}
-              memoryRugs={verdict.memory_rugs}
-              watchlisted={verdict.watchlisted != null}
-            />
+          {loading ? (
+            <>
+              <SkeletonCard />
+              <SkeletonCard />
+            </>
+          ) : (
+            <>
+              {verdict && <VerdictCard verdict={verdict} />}
+              {verdict && <Sparkline points={price} />}
+              {verdict && (
+                <EvidenceCard verdict={verdict} topHolderPct={profile?.top_holder_pct ?? null} />
+              )}
+              {verdict && deployerHist && (
+                <DeployerHistory
+                  history={deployerHist}
+                  memoryRugs={verdict.memory_rugs}
+                  watchlisted={verdict.watchlisted != null}
+                />
+              )}
+            </>
           )}
         </div>
         <div className="col">
-          {verdict && profile && <TokenProfileCard profile={profile} />}
-          {verdict && graph && <ClusterGraph graph={graph} />}
-          {verdict && funding && <FundingTrail funding={funding} />}
-          {verdict && <AutopilotActions watchlisted={verdict.watchlisted} alert={verdict.alert} />}
+          {loading ? (
+            <>
+              <SkeletonCard />
+              <SkeletonCard />
+            </>
+          ) : (
+            <>
+              {verdict && profile && <TokenProfileCard profile={profile} />}
+              {verdict && graph && <ClusterGraph graph={graph} />}
+              {verdict && funding && <FundingTrail funding={funding} />}
+              {verdict && <AutopilotActions watchlisted={verdict.watchlisted} alert={verdict.alert} />}
+            </>
+          )}
           <ChatPanel
             messages={chat.messages}
             streaming={chat.streaming}
             onSend={(msg) => chat.send(msg, verdict?.mint ?? mint)}
+            error={chat.error}
           />
         </div>
       </div>

@@ -153,3 +153,8 @@
   .ask{display:flex;align-items:center;gap:10px;background:var(--inset);border:1px solid var(--line-2);border-radius:9px;padding:10px 12px;margin-top:14px}
   .ask input{all:unset;flex:1;font-size:12.5px;color:var(--text)} .ask input::placeholder{color:var(--faint)} .ask .send{color:var(--accent);flex:none}
   .foot{margin:20px 4px 0;color:var(--faint);font-size:11px;font-family:var(--mono);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+  /* T19 scanning skeletons (loading state — not part of the mockup) */
+  @keyframes skel{0%,100%{opacity:1}50%{opacity:.4}}
+  .skel-bar{background:var(--line);border-radius:6px;animation:skel 1.2s ease-in-out infinite}
+  @media(prefers-reduced-motion:reduce){.skel-bar{animation:none;opacity:.6}}

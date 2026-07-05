@@ -7,6 +7,8 @@ interface ChatPanelProps {
   streaming: boolean
   /** App binds the current mint; ChatPanel only ever hands back the typed text. */
   onSend: (message: string) => void
+  /** Surfaces `useChatStream`'s `error` (a rejected/failed SSE stream) inside the card. */
+  error?: string | null
 }
 
 /** The "Ask a follow-up" chat card (mockup v4's `.msg`/`.ask` block, pro-only). Renders the
@@ -14,7 +16,7 @@ interface ChatPanelProps {
  * through a `<form>` — the mockup used a bare `<label>`, but a form gives Enter-to-submit and the
  * send button correct, accessible semantics while reusing the same `.ask` styling. Input and send
  * are disabled while `streaming` is true, mirroring `useChatStream`'s own concurrent-send guard. */
-export function ChatPanel({ messages, streaming, onSend }: ChatPanelProps) {
+export function ChatPanel({ messages, streaming, onSend, error }: ChatPanelProps) {
   const [input, setInput] = useState('')
 
   function submit() {
@@ -44,6 +46,11 @@ export function ChatPanel({ messages, streaming, onSend }: ChatPanelProps) {
           <p>{m.content}</p>
         </div>
       ))}
+      {error && (
+        <p className="clean-note" style={{ color: 'var(--high)' }}>
+          Chat error — {error}
+        </p>
+      )}
       <form
         className="ask"
         onSubmit={(e) => {
