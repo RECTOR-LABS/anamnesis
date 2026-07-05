@@ -1,5 +1,6 @@
-# Keep the image lean + the build context small. The runtime needs only pyproject.toml,
-# src/, mcp/, app.py and scripts/ (editable install preserves the mcp/ entrypoint layout).
+# Keep the image lean + the build context small. The build needs pyproject.toml, src/, mcp/,
+# scripts/, api/ and frontend/ (the node stage builds frontend/dist fresh inside the image).
+# Everything else — including the committed frontend/dist and node_modules — is excluded.
 .git
 .github
 .venv
@@ -12,6 +13,8 @@ graphs/
 .env
 .env.*
 !.env.example
+frontend/node_modules
+frontend/dist
 assets
 docs
 tests

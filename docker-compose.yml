@@ -1,6 +1,6 @@
-# Anamnesis — self-hosted ($0) deploy: the agent WebUI + a self-hosted MongoDB.
-# Mongo has NO host port (reached only via the compose network); the app's ports publish to
-# the host's 127.0.0.1 only, behind nginx (see deploy/nginx/anamnesis.conf + deploy/RUNBOOK.md).
+# Anamnesis — self-hosted ($0) deploy: the dashboard+API container + a self-hosted MongoDB.
+# Mongo has NO host port (reached only via the compose network); the app publishes to the host's
+# 127.0.0.1 only, behind nginx (see deploy/nginx/anamnesis-cloudflare.conf + deploy/RUNBOOK.md).
 name: anamnesis
 
 services:
@@ -12,14 +12,8 @@ services:
     environment:
       # Point memory at the self-hosted Mongo on the compose network (overrides any .env URI).
       ANAMNESIS_MONGODB_URI: "mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongo:27017/?authSource=admin"
-      ANAMNESIS_WEBUI_HOST: "0.0.0.0"
-      ANAMNESIS_GRAPHS_HOST: "0.0.0.0"
-      # Public URL for cluster-graph links — nginx maps /graphs/ -> the graph server. Falls back
-      # to the loopback default if unset (an empty value would make links root-relative -> 404).
-      ANAMNESIS_GRAPHS_BASE_URL: "${ANAMNESIS_GRAPHS_BASE_URL:-http://localhost:7866}"
     ports:
-      - "127.0.0.1:7860:7860"      # WebUI (Gradio) — behind nginx
-      - "127.0.0.1:7866:7866"      # cluster-graph server — behind nginx at /graphs/
+      - "127.0.0.1:8000:8000"      # uvicorn — serves the SPA at / and the API at /api/*, behind nginx
     depends_on:
       mongo:
         condition: service_healthy
