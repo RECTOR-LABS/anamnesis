@@ -12,6 +12,10 @@ services:
     environment:
       # Point memory at the self-hosted Mongo on the compose network (overrides any .env URI).
       ANAMNESIS_MONGODB_URI: "mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongo:27017/?authSource=admin"
+      # Same-origin cluster-graph links: the agent's cluster_graph tool builds <base>/<file>, and
+      # api/routes/graph_static.py serves them at /graphs/* (nginx one-upstream proxies / -> :8000).
+      # Root-relative so it resolves against the live origin — no domain baked in.
+      ANAMNESIS_GRAPHS_BASE_URL: "/graphs"
     ports:
       - "127.0.0.1:8000:8000"      # uvicorn — serves the SPA at / and the API at /api/*, behind nginx
     depends_on:
