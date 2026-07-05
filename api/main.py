@@ -6,8 +6,12 @@ this middleware is simply inert there, not a prod security surface.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from anamnesis.logging_setup import quiet_http_loggers
 from api.routes.assess import router as assess_router
@@ -47,3 +51,34 @@ app.include_router(profile_router)
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+# ── Frontend (Track B) ────────────────────────────────────────────────────────────────────────
+# Serve the built React dashboard (frontend/dist) from this same app, so ONE
+# `uvicorn api.main:app` container answers both the SPA at `/` and the API at `/api/*`. The mount
+# is guarded on the build's presence: a checkout with no `npm run build` output (CI, the backend
+# test suite, a bare Vite dev workflow) imports cleanly and still answers `/api/*` — the SPA is
+# simply absent. Mounted LAST, so every `/api/*` route is matched before this catch-all.
+class _SPAStaticFiles(StaticFiles):
+    """StaticFiles with a client-side-routing fallback: an unknown, non-API path resolves to
+    index.html (the app shell) instead of 404, so browser deep links load the SPA. `/api/*`
+    misses are deliberately excluded — they must surface as real API 404s, not the shell."""
+
+    async def get_response(self, path: str, scope):
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404 and not path.startswith("api/"):
+                return await super().get_response("index.html", scope)
+            raise
+
+
+def _mount_frontend(application: FastAPI, dist_dir: Path) -> None:
+    """Mount the built SPA at `/` when `dist_dir` exists; a no-op otherwise (build-free runs)."""
+    if dist_dir.is_dir():
+        application.mount("/", _SPAStaticFiles(directory=str(dist_dir), html=True), name="spa")
+
+
+# frontend/dist sits at the repo root, one level up from api/.
+_FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+_mount_frontend(app, _FRONTEND_DIST)
