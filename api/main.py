@@ -64,18 +64,19 @@ def health() -> dict:
 class _SPAStaticFiles(StaticFiles):
     """StaticFiles with a client-side-routing fallback: an unknown non-API, non-asset path
     resolves to index.html (the app shell) instead of 404, so browser deep links load the SPA.
-    Two path classes are deliberately excluded so they surface real 404s, not the shell:
-    `api`/`api/*` (API misses must stay API errors) and `assets/*` (hashed build files — a stale
+    Three path classes are deliberately excluded so they surface real 404s, not the shell:
+    `api`/`api/*` (API misses must stay API errors), `assets/*` (hashed build files — a stale
     `assets/index-<oldhash>.js` request from a tab open across a redeploy must 404 so the browser
-    errors cleanly, not receive 200 text/html it then fails to parse as JS)."""
+    errors cleanly, not receive 200 text/html it then fails to parse as JS), and `graphs`/`graphs/*`
+    (the cluster-graph route's namespace — a miss there is a dead graph link, not a client route)."""
 
     async def get_response(self, path: str, scope):
         try:
             return await super().get_response(path, scope)
         except StarletteHTTPException as exc:
             if (exc.status_code == 404
-                    and path != "api"
-                    and not path.startswith(("api/", "assets/"))):
+                    and path not in ("api", "graphs")
+                    and not path.startswith(("api/", "assets/", "graphs/"))):
                 return await super().get_response("index.html", scope)
             raise
 

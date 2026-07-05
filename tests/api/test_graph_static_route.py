@@ -101,6 +101,45 @@ def test_route_wins_over_spa_catch_all(
     assert 'id="root"' not in resp.text
 
 
+def test_null_byte_filename_returns_404_not_500(graphs_dir: Path) -> None:
+    # A null byte must be a clean 404 — the name is validated BEFORE any Path.resolve(), which
+    # raises ValueError("embedded null character") and would otherwise 500 (an error/fingerprint
+    # oracle). Exercised on the REAL app, where the 500 surfaced.
+    resp = TestClient(app).get("/graphs/cluster_x%00.html")
+    assert resp.status_code == 404
+
+
+def test_symlink_inside_graphs_dir_cannot_escape(graphs_dir: Path, tmp_path: Path) -> None:
+    # A whitelisted name reaches the handler; if it is a symlink pointing OUTSIDE GRAPHS_DIR, the
+    # is_relative_to containment check (defense in depth) must still refuse it. This is the only
+    # input that reaches that branch — the name whitelist blocks every separator/`..` before it.
+    secret = tmp_path / "secret.html"
+    secret.write_text("TOP-SECRET")
+    (graphs_dir / "cluster_evil.html").symlink_to(secret)
+    resp = TestClient(_graphs_only_app()).get("/graphs/cluster_evil.html")
+    assert resp.status_code == 404
+    assert "TOP-SECRET" not in resp.text
+
+
+def test_graphs_namespace_miss_404s_not_spa_shell(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A /graphs/* path that misses the single-segment route must 404, not fall through to the SPA
+    # index.html shell — /graphs is an API-owned namespace like /api and /assets.
+    graphs = tmp_path / "graphs"
+    graphs.mkdir()
+    monkeypatch.setattr(config, "GRAPHS_DIR", str(graphs))
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text('<!doctype html><div id="root"></div>')
+    test_app = FastAPI()
+    test_app.include_router(graph_static_router)
+    _mount_frontend(test_app, dist)
+    resp = TestClient(test_app).get("/graphs/deep/miss.html")
+    assert resp.status_code == 404
+    assert 'id="root"' not in resp.text
+
+
 @pytest.mark.parametrize(
     "name",
     [
