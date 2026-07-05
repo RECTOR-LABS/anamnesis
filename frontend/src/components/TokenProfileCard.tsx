@@ -57,7 +57,10 @@ function liquidityRow(status: string): { value: string; tone: 'ok' | 'warn' } {
 
 function topHolderRow(pct: number | null): { value: string; tone: Tone } {
   if (pct == null) return { value: 'unknown', tone: null }
-  return { value: `${pct}%`, tone: pct >= HOLDER_CONCENTRATION_WARN_PCT ? 'warn' : 'ok' }
+  // Display rounded to one decimal place (e.g. "97.8%"), but the warn/ok tone is decided on the
+  // raw `pct` — never re-derive it from the rounded display string, which could cross the
+  // threshold in either direction for a value near the boundary.
+  return { value: `${pct.toFixed(1)}%`, tone: pct >= HOLDER_CONCENTRATION_WARN_PCT ? 'warn' : 'ok' }
 }
 
 /** The Token profile card — pro-only "own signals" for the flagged mint, from mockup v4 (lines

@@ -64,8 +64,8 @@ describe('TokenProfileCard', () => {
     expect(value).toHaveTextContent('secured')
   })
 
-  it('renders a high top_holder_pct as a warn percentage', () => {
-    const profile = makeProfile({ top_holder_pct: 97.8 })
+  it('renders a high top_holder_pct as a warn percentage, rounded to one decimal place', () => {
+    const profile = makeProfile({ top_holder_pct: 97.7969569195 })
     const { container } = render(<TokenProfileCard profile={profile} />)
 
     const value = container.querySelectorAll('.kv .i')[ROW.topHolder].querySelector('.v')
@@ -73,13 +73,25 @@ describe('TokenProfileCard', () => {
     expect(value).toHaveTextContent('97.8%')
   })
 
-  it('renders a low top_holder_pct as an ok percentage', () => {
+  it('renders a low top_holder_pct as an ok percentage, rounded to one decimal place', () => {
     const profile = makeProfile({ top_holder_pct: 4 })
     const { container } = render(<TokenProfileCard profile={profile} />)
 
     const value = container.querySelectorAll('.kv .i')[ROW.topHolder].querySelector('.v')
     expect(value).toHaveClass('v', 'ok')
-    expect(value).toHaveTextContent('4%')
+    expect(value).toHaveTextContent('4.0%')
+  })
+
+  it('keeps the warn threshold on the raw top_holder_pct even when the rounded display crosses it', () => {
+    // 24.96 rounds to "25.0" for display but is still < 25 raw — the warn/ok tone must be decided
+    // on the raw value, not by re-deriving it from the rounded display string.
+    const profile = makeProfile({ top_holder_pct: 24.96 })
+    const { container } = render(<TokenProfileCard profile={profile} />)
+
+    const value = container.querySelectorAll('.kv .i')[ROW.topHolder].querySelector('.v')
+    expect(value).toHaveClass('v', 'ok')
+    expect(value).not.toHaveClass('warn')
+    expect(value).toHaveTextContent('25.0%')
   })
 
   it('renders a null top_holder_pct as unknown with no tone', () => {

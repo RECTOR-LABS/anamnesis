@@ -21,14 +21,16 @@ describe('Sparkline', () => {
     expect(coords).toHaveLength(5)
   })
 
-  it('renders nothing for an empty points array', () => {
+  it('renders a "no recent price activity" note for an empty points array', () => {
     const { container } = render(<Sparkline points={[]} />)
     expect(container.querySelector('svg')).not.toBeInTheDocument()
+    expect(container.querySelector('.clean-note')).toHaveTextContent('no recent price activity')
   })
 
-  it('renders nothing for a single point (cannot draw a line from fewer than 2 points)', () => {
+  it('renders a "no recent price activity" note for a single point (cannot draw a line from fewer than 2 points)', () => {
     const { container } = render(<Sparkline points={makePoints([5])} />)
     expect(container.querySelector('svg')).not.toBeInTheDocument()
+    expect(container.querySelector('.clean-note')).toHaveTextContent('no recent price activity')
   })
 
   it('renders a centered flat line with no NaN when all prices are equal', () => {

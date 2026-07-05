@@ -20,6 +20,15 @@ function stubFetch(response: Record<string, unknown>) {
   return fetchMock
 }
 
+/** Stubs the global `fetch` with a mock that rejects — simulates a network failure or an
+ * `AbortController` timeout (both surface to a caller as a rejected `fetch()` promise, which is
+ * exactly what `requestJson`'s timeout plumbing relies on). */
+function stubFetchReject(error: unknown = new Error('simulated network failure')) {
+  const fetchMock = vi.fn().mockRejectedValue(error)
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
+}
+
 /** Builds a `ReadableStream<Uint8Array>` that yields each string in `chunks` as one separate
  * `reader.read()` result (encoded via `TextEncoder`), then closes — simulating network chunks
  * that may split an SSE frame's blank-line boundary mid-delimiter. Most fixtures below use the
@@ -114,7 +123,9 @@ describe('GET endpoints', () => {
     const result = await getProfile('mint/with space')
 
     expect(result).toEqual(profile)
-    expect(fetchMock).toHaveBeenCalledWith('/api/profile/mint%2Fwith%20space', undefined)
+    expect(fetchMock).toHaveBeenCalledWith('/api/profile/mint%2Fwith%20space', {
+      signal: expect.any(AbortSignal),
+    })
   })
 
   it('getDeployer hits GET /api/deployer/{mint} and returns the body verbatim', async () => {
@@ -130,7 +141,7 @@ describe('GET endpoints', () => {
     const result = await getDeployer('GYaS')
 
     expect(result).toEqual(history)
-    expect(fetchMock).toHaveBeenCalledWith('/api/deployer/GYaS', undefined)
+    expect(fetchMock).toHaveBeenCalledWith('/api/deployer/GYaS', { signal: expect.any(AbortSignal) })
   })
 
   it('getFunding hits GET /api/funding/{mint} and returns the body verbatim', async () => {
@@ -146,7 +157,7 @@ describe('GET endpoints', () => {
     const result = await getFunding('GYaS')
 
     expect(result).toEqual(funding)
-    expect(fetchMock).toHaveBeenCalledWith('/api/funding/GYaS', undefined)
+    expect(fetchMock).toHaveBeenCalledWith('/api/funding/GYaS', { signal: expect.any(AbortSignal) })
   })
 
   it('getGraph hits GET /api/graph/{deployer} and returns the body verbatim', async () => {
@@ -159,7 +170,45 @@ describe('GET endpoints', () => {
     const result = await getGraph('dep1')
 
     expect(result).toEqual(graph)
-    expect(fetchMock).toHaveBeenCalledWith('/api/graph/dep1', undefined)
+    expect(fetchMock).toHaveBeenCalledWith('/api/graph/dep1', { signal: expect.any(AbortSignal) })
+  })
+})
+
+describe('lazy-read timeout degrade', () => {
+  it('getProfile resolves to a {mint, error} degrade shape instead of rejecting when fetch fails', async () => {
+    stubFetchReject()
+
+    const result = await getProfile('GYaS')
+
+    expect(result).toEqual({ mint: 'GYaS', error: expect.any(String) })
+  })
+
+  it('getDeployer resolves to a {mint, error} degrade shape instead of rejecting when fetch fails', async () => {
+    stubFetchReject()
+
+    const result = await getDeployer('GYaS')
+
+    expect(result).toEqual({ mint: 'GYaS', error: expect.any(String) })
+  })
+
+  it('getFunding resolves to a {mint, error} degrade shape instead of rejecting when fetch fails', async () => {
+    stubFetchReject()
+
+    const result = await getFunding('GYaS')
+
+    expect(result).toEqual({ mint: 'GYaS', error: expect.any(String) })
+  })
+
+  it('getGraph still rejects when fetch fails (no degrade shape — App.catch maps it to an absent card)', async () => {
+    stubFetchReject()
+
+    await expect(getGraph('dep1')).rejects.toThrow()
+  })
+
+  it('getPrice still rejects when fetch fails (no degrade shape — App.catch maps it to an absent card)', async () => {
+    stubFetchReject()
+
+    await expect(getPrice('GYaS')).rejects.toThrow()
   })
 })
 

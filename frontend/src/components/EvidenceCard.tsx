@@ -74,7 +74,7 @@ export function EvidenceCard({ verdict, topHolderPct }: EvidenceCardProps) {
                     <i className="rest" />
                   </div>
                   <div className="hnote">
-                    <span>top holder · {topHolderPct}%</span>
+                    <span>top holder · {topHolderPct.toFixed(1)}%</span>
                     <span>others · {(100 - topHolderPct).toFixed(1)}%</span>
                   </div>
                 </div>

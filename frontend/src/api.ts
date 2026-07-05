@@ -12,14 +12,37 @@ import type {
 
 const BASE_URL = '/api'
 
+/** Timeout for the lazy per-card reads (`getProfile`/`getDeployer`/`getFunding`/`getGraph`/
+ * `getPrice`) fired after the primary `assess` scan resolves. A serial rugger's deployer history
+ * can take minutes to walk live via Helius, so capping each lazy read at 20s means a slow card
+ * degrades or disappears promptly instead of blank-waiting for minutes. Deliberately NOT applied
+ * to `assess` itself, which can legitimately take ~8s on live Helius for the primary scan. */
+const LAZY_TIMEOUT_MS = 20000
+
 /** Shared GET/POST-JSON helper: throws a clear, labeled error on any non-2xx response so
- * callers can render an error state instead of working with a partial/undefined body. */
-async function requestJson<T>(url: string, label: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init)
-  if (!res.ok) {
-    throw new Error(`${label} failed: ${res.status}`)
+ * callers can render an error state instead of working with a partial/undefined body. An optional
+ * `timeoutMs` aborts the in-flight fetch via `AbortController` once it elapses; the abort
+ * surfaces through the same throw path as any other fetch failure (an `AbortError` rejects
+ * `fetch` like a network error would) — callers that want a graceful degrade on timeout wrap this
+ * in their own try/catch (see `getProfile`/`getDeployer`/`getFunding` below); callers that want
+ * it to keep throwing (`getGraph`/`getPrice`) simply don't. */
+async function requestJson<T>(
+  url: string,
+  label: string,
+  init?: RequestInit,
+  timeoutMs?: number,
+): Promise<T> {
+  const ctrl = timeoutMs != null ? new AbortController() : undefined
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : undefined
+  try {
+    const res = await fetch(url, ctrl ? { ...init, signal: ctrl.signal } : init)
+    if (!res.ok) {
+      throw new Error(`${label} failed: ${res.status}`)
+    }
+    return (await res.json()) as T
+  } finally {
+    if (timer) clearTimeout(timer)
   }
-  return (await res.json()) as T
 }
 
 export function assess(mint: string): Promise<Verdict> {
@@ -30,28 +53,72 @@ export function assess(mint: string): Promise<Verdict> {
   })
 }
 
-export function getProfile(mint: string): Promise<Profile> {
-  return requestJson<Profile>(`${BASE_URL}/profile/${encodeURIComponent(mint)}`, 'profile')
+/** Degrades to the backend's own `{mint, error}` shape (see `Profile.error`) on any failure —
+ * including a lazy-read timeout — instead of rejecting, so the card renders its existing
+ * "unavailable" state promptly rather than the caller hanging or having to handle a rejection. */
+export async function getProfile(mint: string): Promise<Profile> {
+  try {
+    return await requestJson<Profile>(
+      `${BASE_URL}/profile/${encodeURIComponent(mint)}`,
+      'profile',
+      undefined,
+      LAZY_TIMEOUT_MS,
+    )
+  } catch {
+    return { mint, error: 'request timed out' } as Profile
+  }
 }
 
-export function getDeployer(mint: string): Promise<DeployerHistory> {
-  return requestJson<DeployerHistory>(`${BASE_URL}/deployer/${encodeURIComponent(mint)}`, 'deployer')
+/** Degrades to the backend's own `{mint, error}` shape on any failure — see `getProfile`. */
+export async function getDeployer(mint: string): Promise<DeployerHistory> {
+  try {
+    return await requestJson<DeployerHistory>(
+      `${BASE_URL}/deployer/${encodeURIComponent(mint)}`,
+      'deployer',
+      undefined,
+      LAZY_TIMEOUT_MS,
+    )
+  } catch {
+    return { mint, error: 'request timed out' } as DeployerHistory
+  }
 }
 
-export function getFunding(mint: string): Promise<Funding> {
-  return requestJson<Funding>(`${BASE_URL}/funding/${encodeURIComponent(mint)}`, 'funding')
+/** Degrades to the backend's own `{mint, error}` shape on any failure — see `getProfile`. */
+export async function getFunding(mint: string): Promise<Funding> {
+  try {
+    return await requestJson<Funding>(
+      `${BASE_URL}/funding/${encodeURIComponent(mint)}`,
+      'funding',
+      undefined,
+      LAZY_TIMEOUT_MS,
+    )
+  } catch {
+    return { mint, error: 'request timed out' } as Funding
+  }
 }
 
+/** No degrade shape (`GraphData` isn't degrade-shaped) — keeps throwing on timeout/failure, same
+ * as any other fetch failure; App's `.catch` maps that rejection to `null`, so the ClusterGraph
+ * card is simply absent rather than hanging. */
 export function getGraph(deployer: string): Promise<GraphData> {
-  return requestJson<GraphData>(`${BASE_URL}/graph/${encodeURIComponent(deployer)}`, 'graph')
+  return requestJson<GraphData>(
+    `${BASE_URL}/graph/${encodeURIComponent(deployer)}`,
+    'graph',
+    undefined,
+    LAZY_TIMEOUT_MS,
+  )
 }
 
 /** Unwraps the `{points: [...]}` envelope `GET /api/price/{mint}` returns (see
- * `api/routes/price.py`) so callers work with the sparkline array directly. */
+ * `api/routes/price.py`) so callers work with the sparkline array directly. No degrade shape
+ * (`PricePoint[]` isn't degrade-shaped) — keeps throwing on timeout/failure; App's `.catch` maps
+ * that rejection to `[]`, so the Sparkline renders its own empty-state note rather than hanging. */
 export async function getPrice(mint: string): Promise<PricePoint[]> {
   const body = await requestJson<{ points: PricePoint[] }>(
     `${BASE_URL}/price/${encodeURIComponent(mint)}`,
     'price',
+    undefined,
+    LAZY_TIMEOUT_MS,
   )
   return body.points
 }

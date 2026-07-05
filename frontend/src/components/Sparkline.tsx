@@ -9,7 +9,15 @@ interface SparklineProps {
  * inline SVG attributes to keep the "no new CSS" constraint intact. Pure presentational, driven
  * entirely by `points`; App wires in `GET /api/price`'s `PricePoint[]` in T18. */
 export function Sparkline({ points }: SparklineProps) {
-  if (points.length < 2) return null // can't draw a line from fewer than 2 points
+  if (points.length < 2) {
+    // Can't draw a line from fewer than 2 points — a dead token with no price series is itself a
+    // signal, so render a subtle, honest note instead of silently rendering nothing.
+    return (
+      <div className="clean-note" style={{ fontSize: 11, marginTop: 4 }}>
+        no recent price activity
+      </div>
+    )
+  }
 
   const prices = points.map((p) => p.price)
   const min = Math.min(...prices)

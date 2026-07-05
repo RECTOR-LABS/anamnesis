@@ -73,6 +73,16 @@ describe('EvidenceCard', () => {
     expect(container.querySelector('.hnote')).toHaveTextContent('others · 2.2%')
   })
 
+  it('rounds the holder-bar top-holder percentage to one decimal place for display', () => {
+    const verdict = makeVerdict({
+      memory_rugs: [],
+      signals: [{ code: 'HOLDER_CONCENTRATION', severity: 'medium', detail: 'top holder 97.8%' }],
+    })
+    const { container } = render(<EvidenceCard verdict={verdict} topHolderPct={97.7969569195} />)
+
+    expect(container.querySelector('.hnote')).toHaveTextContent('top holder · 97.8%')
+  })
+
   it('omits the holder bar when topHolderPct is null, still rendering the signal as a plain row', () => {
     const verdict = makeVerdict({
       memory_rugs: [],
