@@ -150,6 +150,14 @@
   .av{width:22px;height:22px;border-radius:6px;flex:none;display:grid;place-items:center;font-family:var(--mono);font-size:9px;font-weight:700}
   .av.u{background:var(--panel-2);color:var(--dim);border:1px solid var(--line-2)} .av.a{background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent-line)}
   .msg p{margin:0;font-size:12.5px} .msg.a p{color:var(--dim)} .msg.a b{color:var(--text);font-weight:600}
+  /* Agent markdown (Markdown.tsx) rendered inside the assistant bubble */
+  .msg.a p{margin:6px 0}
+  .msg.a .md-h{color:var(--text);font-weight:650;font-size:11.5px;letter-spacing:.4px;margin:10px 0 3px}
+  .msg.a .md-ul{margin:5px 0;padding-left:16px;color:var(--dim);font-size:12.5px}
+  .msg.a .md-ul li{margin:2px 0}
+  .msg.a strong{color:var(--text);font-weight:600}
+  .msg.a a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+  .msg.a code{font-family:var(--mono);font-size:11px;background:var(--panel-2);border:1px solid var(--line);border-radius:4px;padding:0 4px;color:var(--text);word-break:break-all}
   .ask{display:flex;align-items:center;gap:10px;background:var(--inset);border:1px solid var(--line-2);border-radius:9px;padding:10px 12px;margin-top:14px}
   .ask input{all:unset;flex:1;font-size:12.5px;color:var(--text)} .ask input::placeholder{color:var(--faint)} .ask .send{color:var(--accent);flex:none}
   .foot{margin:20px 4px 0;color:var(--faint);font-size:11px;font-family:var(--mono);display:flex;gap:8px;align-items:center;flex-wrap:wrap}

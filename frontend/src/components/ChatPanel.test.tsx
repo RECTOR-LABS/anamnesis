@@ -106,4 +106,28 @@ describe('ChatPanel', () => {
     const { container } = renderChatPanel({ messages })
     expect(container.querySelectorAll('.msg.a')).toHaveLength(0)
   })
+
+  it('renders the assistant reply as formatted markdown, not raw ### / ** text', () => {
+    const messages: ChatMessage[] = [
+      { role: 'user', content: 'is this a rug?' },
+      {
+        role: 'assistant',
+        content: '### Verdict\n- **Deployer** rugged 3 tokens. See [the graph](/graphs/x.html).',
+      },
+    ]
+    const { container } = renderChatPanel({ messages })
+    expect(container.querySelector('.msg.a .md-h')).toHaveTextContent('Verdict')
+    expect(container.querySelector('.msg.a strong')).toHaveTextContent('Deployer')
+    expect(container.querySelector('.msg.a a')).toHaveAttribute('href', '/graphs/x.html')
+    const bubble = container.querySelector('.msg.a')?.textContent ?? ''
+    expect(bubble).not.toContain('###')
+    expect(bubble).not.toContain('**')
+  })
+
+  it('keeps a user turn as plain text (no markdown parsing)', () => {
+    const messages: ChatMessage[] = [{ role: 'user', content: '**not bold**' }]
+    const { container } = renderChatPanel({ messages })
+    expect(container.querySelector('.msg strong')).toBeNull()
+    expect(container.querySelector('.msg')?.textContent).toContain('**not bold**')
+  })
 })

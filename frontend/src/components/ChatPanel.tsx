@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { ChatMessage } from '../hooks/useChatStream'
 import { Card } from './Card'
+import { Markdown } from './Markdown'
 
 interface ChatPanelProps {
   messages: ChatMessage[]
@@ -82,7 +83,9 @@ export function ChatPanel({ messages, streaming, onSend, error }: ChatPanelProps
                   ))}
                 </div>
               )}
-              <p>{m.content}</p>
+              {/* The agent replies in markdown (headings, bold, lists, a /graphs link) — render it,
+                  don't dump raw `###`/`**`. User turns are plain text. */}
+              {m.role === 'assistant' ? <Markdown text={m.content} /> : <p>{m.content}</p>}
             </div>
           </div>
         ))}
