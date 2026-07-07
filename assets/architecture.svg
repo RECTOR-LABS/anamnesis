@@ -22,7 +22,7 @@
   <!-- thesis ribbon -->
   <rect x="96" y="90" width="788" height="44" rx="10" fill="#161b22" stroke="#f0883e" stroke-width="1.5"/>
   <text x="490" y="117" text-anchor="middle" font-size="13.5">
-    <tspan fill="#f0883e" font-weight="700">Memory is the edge:</tspan><tspan fill="#e6edf3" dx="4">a remembered serial rugger's brand-new, clean token → flagged HIGH on sight · ~1,400× faster than cold</tspan>
+    <tspan fill="#f0883e" font-weight="700">Memory is the edge:</tspan><tspan fill="#e6edf3" dx="4">a remembered serial rugger's brand-new, clean token → flagged HIGH on sight · ~220,209× faster than cold</tspan>
   </text>
 
   <!-- input -->
