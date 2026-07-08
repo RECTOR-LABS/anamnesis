@@ -8,7 +8,7 @@ Alibaba ECS**. Target cost: **$0** via the free-trial / new-user credit.
 Once the ECS exists and you can SSH in, this is ~10 copy-paste steps. Artifacts referenced:
 `Dockerfile`, `docker-compose.yml`, and one nginx vhost — `deploy/nginx/anamnesis-cloudflare.conf`
 (Cloudflare Origin CA, step 7A) or `deploy/nginx/anamnesis.conf` (Let's Encrypt, step 7B). One
-container serves the React dashboard at `/` and the API at `/api/*` (`uvicorn api.main:app`).
+container serves the React dashboard at `/` and the API at `/api/*` (`uvicorn app.main:app`).
 
 ## 0. Prerequisites (local)
 

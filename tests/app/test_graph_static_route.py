@@ -1,7 +1,7 @@
 """GET /graphs/{filename}: serving rendered cluster-graph HTML (G14).
 
 Track B dropped the standalone graph static server (app.py's daemon thread over GRAPHS_DIR); the
-deploy now runs ``uvicorn api.main:app`` only. The agent's ``cluster_graph`` tool still renders an
+deploy now runs ``uvicorn app.main:app`` only. The agent's ``cluster_graph`` tool still renders an
 interactive HTML file into ``config.GRAPHS_DIR`` and links to ``config.GRAPHS_BASE_URL/<file>``.
 Setting ``ANAMNESIS_GRAPHS_BASE_URL=/graphs`` makes that link same-origin
 (``/graphs/cluster_<seed>.html``), which nginx's one-upstream ``location /`` proxies here — so a
@@ -15,9 +15,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from anamnesis import config
-from api.main import _mount_frontend, app
-from api.routes.graph_static import _is_safe_graph_name
-from api.routes.graph_static import router as graph_static_router
+from app.main import _mount_frontend, app
+from app.routes.graph_static import _is_safe_graph_name
+from app.routes.graph_static import router as graph_static_router
 
 
 @pytest.fixture

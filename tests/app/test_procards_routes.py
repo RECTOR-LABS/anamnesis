@@ -5,12 +5,12 @@ No engine logic is exercised here — each route only reuses an existing forensi
 from anamnesis.forensic.mcp_tools verbatim (token_profile_dict / deployer_token_history_dict /
 trace_funding_dict). Tests stay network-free two ways:
 
-1. api.deps.get_helius is monkeypatched (autouse) to a harmless stub. Every route still calls
+1. app.deps.get_helius is monkeypatched (autouse) to a harmless stub. Every route still calls
    it to obtain a client to pass through, even in these tests where the serializer itself is
    also monkeypatched below — so it must never fall through to a real
    config.require("ANAMNESIS_HELIUS_API_KEY") lookup (unset in CI, and not something an
    HTTP-surface test should depend on regardless of what happens to be in the local shell env).
-2. Each route's serializer is monkeypatched on the ROUTE module (`api.routes.<mod>.<name>`),
+2. Each route's serializer is monkeypatched on the ROUTE module (`app.routes.<mod>.<name>`),
    not on `anamnesis.forensic.mcp_tools` itself: every route does `from anamnesis.forensic.
    mcp_tools import <name>`, which binds a new name in the route module's namespace, so patching
    the original mcp_tools attribute afterward would not be visible to the route.
@@ -21,8 +21,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from anamnesis.forensic.helius import HeliusError
-from api import deps
-from api.main import app
+from app import deps
+from app.main import app
 
 client = TestClient(app)
 
@@ -50,7 +50,7 @@ def test_get_profile_returns_token_profile_dict_body(monkeypatch):
         "top_holder_pct": 12.5,
         "holder_count": 400,
     }
-    monkeypatch.setattr("api.routes.profile.token_profile_dict", lambda client, mint: profile)
+    monkeypatch.setattr("app.routes.profile.token_profile_dict", lambda client, mint: profile)
 
     resp = client.get(f"/api/profile/{MINT}")
 
@@ -66,7 +66,7 @@ def test_get_profile_never_500s_on_helius_error(monkeypatch):
     def _raise(client, mint):
         raise HeliusError("getAsset failed: HTTP 500")
 
-    monkeypatch.setattr("api.routes.profile.token_profile_dict", _raise)
+    monkeypatch.setattr("app.routes.profile.token_profile_dict", _raise)
 
     resp = client.get(f"/api/profile/{MINT}")
 
@@ -90,7 +90,7 @@ def test_get_deployer_returns_deployer_token_history_dict_body(monkeypatch):
         "truncated": False,
     }
     monkeypatch.setattr(
-        "api.routes.deployer.deployer_token_history_dict", lambda client, mint: history
+        "app.routes.deployer.deployer_token_history_dict", lambda client, mint: history
     )
 
     resp = client.get(f"/api/deployer/{MINT}")
@@ -105,7 +105,7 @@ def test_get_deployer_degraded_dict_is_still_200_not_500(monkeypatch):
     # as-is (never turn a degraded dict into a 500).
     degraded = {"error": "getSignaturesForAddress failed: HTTP 429", "mint": MINT}
     monkeypatch.setattr(
-        "api.routes.deployer.deployer_token_history_dict", lambda client, mint: degraded
+        "app.routes.deployer.deployer_token_history_dict", lambda client, mint: degraded
     )
 
     resp = client.get(f"/api/deployer/{MINT}")
@@ -123,7 +123,7 @@ def test_get_deployer_unresolved_deployer_is_200_not_500(monkeypatch):
         "mint": MINT, "deployer": None, "created_mints": [], "count": 0, "truncated": False,
     }
     monkeypatch.setattr(
-        "api.routes.deployer.deployer_token_history_dict", lambda client, mint: unresolved
+        "app.routes.deployer.deployer_token_history_dict", lambda client, mint: unresolved
     )
 
     resp = client.get(f"/api/deployer/{MINT}")
@@ -145,7 +145,7 @@ def test_get_funding_returns_trace_funding_dict_body(monkeypatch):
         "source_type": "cex",
         "funded_at": "2026-01-01T00:00:00+00:00",
     }
-    monkeypatch.setattr("api.routes.funding.trace_funding_dict", lambda client, mint: funding)
+    monkeypatch.setattr("app.routes.funding.trace_funding_dict", lambda client, mint: funding)
 
     resp = client.get(f"/api/funding/{MINT}")
 
@@ -155,7 +155,7 @@ def test_get_funding_returns_trace_funding_dict_body(monkeypatch):
 
 def test_get_funding_degraded_dict_is_still_200_not_500(monkeypatch):
     degraded = {"error": "getSignaturesForAddress failed: HTTP 429", "mint": MINT}
-    monkeypatch.setattr("api.routes.funding.trace_funding_dict", lambda client, mint: degraded)
+    monkeypatch.setattr("app.routes.funding.trace_funding_dict", lambda client, mint: degraded)
 
     resp = client.get(f"/api/funding/{MINT}")
 
@@ -171,7 +171,7 @@ def test_get_funding_unresolved_deployer_is_200_not_500(monkeypatch):
         "mint": MINT, "deployer": None, "funder": None,
         "source_type": "unknown", "funded_at": None,
     }
-    monkeypatch.setattr("api.routes.funding.trace_funding_dict", lambda client, mint: unresolved)
+    monkeypatch.setattr("app.routes.funding.trace_funding_dict", lambda client, mint: unresolved)
 
     resp = client.get(f"/api/funding/{MINT}")
 

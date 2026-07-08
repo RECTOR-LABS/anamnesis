@@ -15,7 +15,7 @@ existing constructors together for the routes.
 CI-safety: every top-level import below is qwen-agent-free (pymongo, anamnesis.forensic.*,
 anamnesis.memory.*, anamnesis.agent.tools, anamnesis.agent.actions — none pull in qwen-agent at
 import time). Only get_agent() touches qwen-agent, via a lazy import inside the function body,
-so `import api.deps` succeeds in CI (which installs no qwen-agent/mcp/openai).
+so `import app.deps` succeeds in CI (which installs no qwen-agent/mcp/openai).
 """
 from __future__ import annotations
 
@@ -97,7 +97,7 @@ def assess(mint: str) -> dict:
 @lru_cache(maxsize=1)
 def get_agent():
     """Lazy qwen-agent Assistant singleton. Imports anamnesis.agent.agent (which pulls in
-    qwen-agent) inside the function body — not at module top — so `import api.deps` stays
+    qwen-agent) inside the function body — not at module top — so `import app.deps` stays
     CI-safe. Exercised by Task 4's chat SSE route, not unit-tested here (CI has no qwen-agent
     installed)."""
     from anamnesis.agent.agent import build_agent

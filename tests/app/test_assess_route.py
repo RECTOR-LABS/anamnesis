@@ -1,5 +1,5 @@
 """HTTP surface tests for POST /api/assess and GET /api/health, via FastAPI's TestClient
-(no network, no real engine, no Mongo/Helius). api.deps.assess is monkeypatched to a fixed
+(no network, no real engine, no Mongo/Helius). app.deps.assess is monkeypatched to a fixed
 dict matching the REAL shape assess_and_act produces (`level` lowercase, `mint`/`deployer`
 present — mirrors api/deps.py's contract, see tests/api/test_deps.py), so these tests prove
 the route wires deps.assess -> verdict_card end-to-end, including the lowercase->UPPERCASE
@@ -7,8 +7,8 @@ the route wires deps.assess -> verdict_card end-to-end, including the lowercase-
 from fastapi.testclient import TestClient
 
 from anamnesis.forensic.helius import HeliusError
-from api import deps
-from api.main import app
+from app import deps
+from app.main import app
 
 client = TestClient(app)
 
@@ -16,7 +16,7 @@ MINT = "GYaS5YyD9jMGSFAFA7Q9MCCpcUpmf3YtutEDrZRpump"
 
 
 def _fake_assess(mint: str) -> dict:
-    # Shape returned by the real api.deps.assess: assess_and_act's verdict_to_dict(...) +
+    # Shape returned by the real app.deps.assess: assess_and_act's verdict_to_dict(...) +
     # acted/watchlisted/alert, plus mint/deployer echoed in by deps.assess itself.
     return {
         "level": "high",
@@ -37,7 +37,7 @@ def _fake_assess(mint: str) -> dict:
 
 
 def test_post_assess_returns_the_verdict_card(monkeypatch):
-    # api.deps.assess is patched on the module (not a `from api.deps import assess` alias
+    # app.deps.assess is patched on the module (not a `from app.deps import assess` alias
     # in the route), so this only works if the route looks it up via `deps.assess(...)`.
     monkeypatch.setattr(deps, "assess", _fake_assess)
 

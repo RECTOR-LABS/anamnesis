@@ -14,7 +14,7 @@
 - **Size**: the bloat is `qwen-agent[gui]` (gradio 187 MB + modelscope 46 MB) which only the
   *legacy* chat WebUI (`app.py`) uses. The dashboard never imports it. Dropping `[gui]` (and
   `uvicorn` — Vercel is the ASGI server) measures **~175 MB** of site-packages, under Vercel's
-  250 MB limit. The full serverless import chain (`api.main:app` + `build_agent`) loads cleanly
+  250 MB limit. The full serverless import chain (`app.main:app` + `build_agent`) loads cleanly
   without gradio/uvicorn. *(See §1.)*
 - **Graph**: the dashboard's ClusterGraph tile is driven by the JSON route
   `/api/graph/{deployer}` (regenerated from memory each call), **not** the `/graphs/*.html`
@@ -59,13 +59,13 @@ for `src/` + `api/` + `mcp/` + the built SPA.
 ## 2. The architecture
 
 - **SPA** (`frontend/dist`) → served as **Vercel static** (CDN). `outputDirectory: frontend/dist`.
-- **API** → **one Python function** that exports the FastAPI ASGI app (`api.main:app`).
+- **API** → **one Python function** that exports the FastAPI ASGI app (`app.main:app`).
   Vercel's runtime detects `app` and serves it; a rewrite routes `/api/*` to it.
   `maxDuration: 60`, `memory: 1024`.
 - **Env** (set on the Vercel project): `ANAMNESIS_DASHSCOPE_API_KEY`, `ANAMNESIS_HELIUS_API_KEY`,
   `ANAMNESIS_MONGODB_URI` (the Atlas URI). The MCP child gets the Helius key via its `env`
   block (not inheritance — see `anamnesis.agent.agent.build_function_list`).
-- The FastAPI app's SPA mount (`api/main.py::_mount_frontend`) is a guarded no-op serverless
+- The FastAPI app's SPA mount (`app/main.py::_mount_frontend`) is a guarded no-op serverless
   (no `frontend/dist` in the function) — harmless; Vercel static serves the SPA instead.
 
 ## 3. The graph feature (downgraded, not broken)
@@ -81,27 +81,20 @@ for `src/` + `api/` + `mcp/` + the built SPA.
   `/graphs/{name}` function that re-runs `render_cluster_html` from the seed — blocked on the
   filename slug being lossy for full Solana addresses, so non-trivial.)*
 
-## 4. DECISION: the `api/` naming collision (needs RECTOR's call)
+## 4. The `api/` naming collision — RESOLVED (rename `api/` → `app/`)
 
-Vercel treats **every** `api/*.py` as a serverless function. The FastAPI app currently lives in
-the `api/` package (`api/main.py`, `api/deps.py`, `api/cards.py`, `api/routes/`, …) — so Vercel
-would build ~6 stray functions (most handler-less → build errors / 404s), each up to ~175 MB.
-That's potentially fatal, not just messy.
+Vercel treats **every** `api/*.py` as a serverless function. With the FastAPI app in the `api/`
+package, Vercel would build ~6 stray functions (most handler-less → build errors / 404s), each
+up to ~175 MB — potentially fatal. The robust fix (chosen): **rename the FastAPI package `api/`
+→ `app/`** (so `app/main.py`, `app/routes/`, …), leaving `api/` free to hold only the thin
+Vercel entry (`api/index.py` → `from app.main import app`).
 
-Two options:
-
-- **(a) Keep `api/` + try to scope via `vercel.json` `functions`** — least invasive, but
-  relies on Vercel suppressing auto-detected functions, which is uncertain. Risk of a failed or
-  bloated first deploy.
-- **(b) Rename the FastAPI package `api/` → `app/`** (so `app/main.py`, `app/routes/`, …),
-  leaving `api/` containing **only** the thin Vercel entry (`api/index.py` → `from app.main
-  import app`). This **definitively** eliminates the collision. Cost: a mechanical rename
-  touching the `Dockerfile` (`api.main:app` → `app.main:app`), `docker-compose.yml`, the test
-  imports (`from api...` → `from app...`), the README quickstart, and this runbook — ~15–25
-  edits, all test-verifiable. The ECS/uvicorn path and the frozen engine are untouched.
-
-**Recommendation: (b).** It's the robust fix and unblocks a clean first deploy. (a) is a gamble
-that costs a deploy iteration if it fails. RECTOR to confirm before I execute the rename.
+Done in this PR (test-verifiable — 323 backend tests green, ruff clean): `git mv api app` +
+`tests/api → tests/app`, the internal `from api…` imports and `api.routes.<mod>.<name>`
+monkeypatch strings, the `Dockerfile` (`COPY app` + `uvicorn app.main:app`), the README
+quickstart, `deploy/RUNBOOK.md`, and this runbook. The frozen engine (`src/anamnesis/**`,
+`mcp/**`) is untouched; the legacy `app.py` WebUI is unaffected (CPython's FileFinder resolves
+`import app` to the package; the WebUI test loads `app.py` by file path, not import).
 
 ## 5. Deploy steps (after §0 gates + §4 decision)
 

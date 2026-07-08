@@ -14,14 +14,14 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from anamnesis.logging_setup import quiet_http_loggers
-from api.routes.assess import router as assess_router
-from api.routes.chat import router as chat_router
-from api.routes.deployer import router as deployer_router
-from api.routes.funding import router as funding_router
-from api.routes.graph import router as graph_router
-from api.routes.graph_static import router as graph_static_router
-from api.routes.price import router as price_router
-from api.routes.profile import router as profile_router
+from app.routes.assess import router as assess_router
+from app.routes.chat import router as chat_router
+from app.routes.deployer import router as deployer_router
+from app.routes.funding import router as funding_router
+from app.routes.graph import router as graph_router
+from app.routes.graph_static import router as graph_static_router
+from app.routes.price import router as price_router
+from app.routes.profile import router as profile_router
 
 app = FastAPI(title="Anamnesis API")
 
@@ -57,7 +57,7 @@ def health() -> dict:
 
 # ── Frontend (Track B) ────────────────────────────────────────────────────────────────────────
 # Serve the built React dashboard (frontend/dist) from this same app, so ONE
-# `uvicorn api.main:app` container answers both the SPA at `/` and the API at `/api/*`. The mount
+# `uvicorn app.main:app` container answers both the SPA at `/` and the API at `/api/*`. The mount
 # is guarded on the build's presence: a checkout with no `npm run build` output (CI, the backend
 # test suite, a bare Vite dev workflow) imports cleanly and still answers `/api/*` — the SPA is
 # simply absent. Mounted LAST, so every `/api/*` route is matched before this catch-all.

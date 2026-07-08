@@ -1,7 +1,7 @@
-"""Serving the built single-page dashboard from api.main.
+"""Serving the built single-page dashboard from app.main.
 
 Track B ships the React dashboard (not the old Gradio WebUI) from the same container that
-serves the API: `uvicorn api.main:app` serves `frontend/dist` at `/` alongside `/api/*`. The
+serves the API: `uvicorn app.main:app` serves `frontend/dist` at `/` alongside `/api/*`. The
 mount is guarded so a checkout with no production build (CI, the backend test suite, a bare
 `npm run dev` workflow) still imports the app and answers `/api/*` — the SPA is simply absent.
 
@@ -13,7 +13,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from api.main import _mount_frontend
+from app.main import _mount_frontend
 
 
 def _make_dist(tmp_path: Path) -> Path:
@@ -29,7 +29,7 @@ def _make_dist(tmp_path: Path) -> Path:
 
 
 def _app_with_api() -> FastAPI:
-    """A stand-in for api.main.app: one registered /api route, nothing else."""
+    """A stand-in for app.main.app: one registered /api route, nothing else."""
     app = FastAPI()
 
     @app.get("/api/health")

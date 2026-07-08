@@ -1,5 +1,5 @@
 # Anamnesis runtime: ONE container serving the React dashboard (SPA) + the FastAPI seam.
-# `uvicorn api.main:app` serves the built frontend at / and the forensic API at /api/*; the chat
+# `uvicorn app.main:app` serves the built frontend at / and the forensic API at /api/*; the chat
 # route spawns the forensic MCP server as a stdio child over the frozen engine. Multi-stage: a
 # node stage builds frontend/dist, the python stage runs it.
 
@@ -30,10 +30,10 @@ COPY pyproject.toml ./
 COPY src ./src
 COPY mcp ./mcp
 COPY scripts ./scripts
-COPY api ./api
+COPY app ./app
 RUN pip install --no-cache-dir -e ".[api]"
 
-# The built SPA from stage 1. api.main mounts /app/frontend/dist at / (guarded on its presence).
+# The built SPA from stage 1. app.main mounts /app/frontend/dist at / (guarded on its presence).
 COPY --from=frontend /frontend/dist ./frontend/dist
 
 # Run as a non-root user (defense-in-depth, even behind nginx). /app is chowned so the editable
@@ -48,4 +48,4 @@ USER app
 ENV ANAMNESIS_GRAPHS_DIR=/app/graphs
 
 EXPOSE 8000
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

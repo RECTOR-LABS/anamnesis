@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from api.cards import price_points, verdict_card
+from app.cards import price_points, verdict_card
 
 
 def test_verdict_card_shapes_high_from_memory():

@@ -1,5 +1,5 @@
 """HTTP surface tests for POST /api/chat's SSE stream, via FastAPI's TestClient (no network,
-no real qwen-agent — api.deps.get_agent is monkeypatched to a FAKE agent whose `.run()` mirrors
+no real qwen-agent — app.deps.get_agent is monkeypatched to a FAKE agent whose `.run()` mirrors
 the REAL contract: each yield is the CUMULATIVE message list for the turn, list items are plain
 dicts (the real qwen-agent yields `Message` pydantic objects too; both normalize the same way
 via `.model_dump()` in api/routes/chat.py — not exercised here since CI installs no qwen-agent),
@@ -17,8 +17,8 @@ import json
 
 from fastapi.testclient import TestClient
 
-from api import deps
-from api.main import app
+from app import deps
+from app.main import app
 
 client = TestClient(app)
 

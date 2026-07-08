@@ -8,8 +8,8 @@ malformed payload to a structured {"error", "mint"} dict rather than raising (mc
 (`funder: null, source_type: "unknown"`) via `funder_of`'s own `if not deployer: return None,
 None` guard and `classify_funder`'s `if not address: return "unknown"` — neither path ever
 raises. So this route needs no try/except of its own: it just resolves the HeliusClient
-singleton via the `deps` module (`from api import deps` then `deps.get_helius()`, never `from
-api.deps import get_helius`, so tests can monkeypatch `deps.get_helius`) and returns the
+singleton via the `deps` module (`from app import deps` then `deps.get_helius()`, never `from
+app.deps import get_helius`, so tests can monkeypatch `deps.get_helius`) and returns the
 serializer's dict verbatim, matching api/routes/graph.py's thin-over-a-degrading-engine
 philosophy.
 """
@@ -18,7 +18,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from anamnesis.forensic.mcp_tools import trace_funding_dict
-from api import deps
+from app import deps
 
 router = APIRouter()
 
