@@ -5,6 +5,10 @@
 *.pem
 *.key
 
+# Local agent tooling (ElevenLabs skills, etc.) — never in the public submission repo
+.agents/
+skills-lock.json
+
 # Python
 __pycache__/
 *.py[cod]
