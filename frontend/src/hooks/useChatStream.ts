@@ -25,10 +25,15 @@ export interface UseChatStreamResult {
  * assistant bubble in place as frames arrive — empty/whitespace-only messages and a second `send`
  * while one is already in flight are both silently ignored.
  *
- * qwen-agent yields the GROWING assistant message on each frame (cumulative content), not a
- * delta — so every `onEvent` REPLACES the last assistant bubble's content with the latest frame
- * rather than appending to it. (Assumption to re-confirm at live smoke / T20; unit-tested here
- * against a mocked `streamChat`.) */
+ * qwen-agent streams ONE growing assistant message per tool-round: within a round the content
+ * is cumulative, but across a tool boundary it RESETS to a fresh message (the about-to-call /
+ * function-response frames straddling the boundary carry a `tool` affordance and ~1-char of
+ * content). So `onEvent` does NOT blindly replace on every non-empty frame — a longer frame is
+ * forward progress (replace); a shorter non-tool frame that isn't a prefix of the current is a
+ * genuine new turn (replace, so a short final answer still lands); a shorter tool-bearing
+ * micro-frame is suppressed (it was the "typed, deleted, reappeared" glitch source). Re-confirmed
+ * at the live smoke — the T20 assumption that qwen-agent is cumulative-everything was wrong —
+ * and unit-tested here against a mocked `streamChat`. */
 export function useChatStream(): UseChatStreamResult {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [streaming, setStreaming] = useState(false)
@@ -68,12 +73,30 @@ export function useChatStream(): UseChatStreamResult {
                 next = { ...next, tools: [...prev, e.tool] }
               }
             }
-            // 2) Fill the bubble from a non-empty assistant text frame. qwen-agent yields the
-            //    GROWING message each frame (cumulative), so REPLACE rather than append; a
-            //    content-less or non-assistant frame leaves the streamed text untouched, so a tool
-            //    call never blanks the bubble mid-turn.
+            // 2) Fill the bubble from an assistant text frame — but never let a tool-boundary
+            //    micro-frame shrink it. qwen-agent streams ONE growing message per tool-round, so
+            //    within a round the content is cumulative; ACROSS a tool boundary it RESETS to a
+            //    fresh message, and the about-to-call / function-response frames straddling that
+            //    boundary carry a `tool` affordance plus ~1-char of content. Replacing on every
+            //    non-empty frame (the old cumulative-everything assumption) let those micro-frames
+            //    clobber a grown bubble → the "typed, deleted, reappeared" glitch. Now: a LONGER
+            //    frame is forward progress (cumulative growth, or a new turn already past the old
+            //    peak) → replace; a shorter NON-tool frame that isn't a prefix of the current is a
+            //    genuine new turn (e.g. a final answer shorter than an earlier preamble) → still
+            //    replace so the answer lands; anything else (a shorter tool-bearing micro-frame,
+            //    a non-advancing duplicate) leaves the streamed text untouched.
             if (e.role === 'assistant' && e.content !== '') {
-              next = { ...next, content: e.content }
+              const current = next.content
+              const longer = e.content.length > current.length
+              const newTurn =
+                !longer &&
+                !e.tool &&
+                current !== '' &&
+                !e.content.startsWith(current) &&
+                e.content.trim() !== ''
+              if (longer || newTurn) {
+                next = { ...next, content: e.content }
+              }
             }
             if (next === cur) return m // nothing changed → same ref, React skips the re-render
             const copy = m.slice()
