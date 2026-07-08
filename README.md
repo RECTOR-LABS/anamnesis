@@ -68,18 +68,20 @@ LP-securedness is detected across **5 venues** (Raydium V4 / CPMM, Meteora DAMM 
 # 1. Configure (never commit real values — .env is gitignored)
 cp .env.example .env        # fill ANAMNESIS_DASHSCOPE_API_KEY, ANAMNESIS_HELIUS_API_KEY, ANAMNESIS_MONGODB_URI
 
-# 2. Install
+# 2. Install (engine + API server — the [api] extra adds fastapi/uvicorn for the dashboard)
 python -m venv .venv && . .venv/bin/activate
-pip install -e .
+pip install -e ".[api]"
 
-# 3. (Demo) seed the reproducible serial-rugger memory, then launch the WebUI
-PYTHONPATH=src python scripts/seed_demo.py     # idempotent; --reset to start clean, --metric for the N× number
-python app.py                                  # Qwen-Agent WebUI; click the GYaS suggestion → instant HIGH
+# 3. (Demo) seed the reproducible serial-rugger memory, then build + serve the dashboard
+PYTHONPATH=src python scripts/seed_demo.py      # idempotent; --reset to start clean, --metric for the N× number
+(cd frontend && npm install && npm run build)   # build the React SPA → frontend/dist (served at /)
+uvicorn api.main:app --port 8000                # one server: SPA at / + API at /api/* → open http://localhost:8000, click the GYaS suggestion → instant HIGH
 
-# 4. Tests
-pip install -e ".[dev]"
-pytest -q                                      # backend tests green
+# 4. Tests (adds the [dev] extra: pytest, ruff, respx, mongomock — [api] kept for the API tests)
+pip install -e ".[api,dev]"
+pytest -q                                       # backend tests green
 ruff check src tests
+(cd frontend && npm test)                       # frontend tests green
 ```
 
 ## Design & docs
