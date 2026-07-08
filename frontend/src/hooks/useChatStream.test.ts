@@ -180,4 +180,75 @@ describe('useChatStream', () => {
     expect(result.current.messages[1].content).toBe('')
     expect(result.current.messages[1].tools).toEqual(['recall'])
   })
+
+  it('does not shrink the bubble when a tool-boundary micro-frame follows grown content', () => {
+    // Live smoke (T20) found qwen-agent RESETS the assistant message at each tool boundary: the
+    // about-to-call / function-response frames straddling the boundary carry a `tool` affordance
+    // and ~1-char of content. Replacing on every non-empty frame made the bubble visibly
+    // shrink/regrow ("typed, deleted, reappeared"). The hook must hold the grown content through
+    // those micro-frames and only advance on a longer (or genuine-new-turn) frame.
+    let onEvent!: (e: ChatEvent) => void
+    mockedStreamChat.mockImplementation((_message, _mint, ev) => {
+      onEvent = ev
+      return Promise.resolve()
+    })
+    const { result } = renderHook(() => useChatStream())
+    act(() => {
+      result.current.send('is it safe?', 'MINT')
+    })
+
+    // Turn 1 grows a real answer.
+    act(() => {
+      onEvent({ role: 'assistant', content: 'Recalling this deployer' })
+    })
+    expect(result.current.messages[1].content).toBe('Recalling this deployer')
+
+    // Tool-boundary micro-frames: shorter, tool-bearing content. Must NOT clobber the bubble.
+    act(() => {
+      onEvent({ role: 'assistant', content: ' ', tool: 'recall' })
+    })
+    act(() => {
+      onEvent({ role: 'function', content: '{"rugs":3}', tool: 'recall' })
+    })
+    act(() => {
+      onEvent({ role: 'assistant', content: ' ', tool: 'solana_forensics-trace_funding' })
+    })
+    expect(result.current.messages[1].content).toBe('Recalling this deployer')
+
+    // The final answer (longer) advances the bubble; the tool trace still records both tools.
+    act(() => {
+      onEvent({ role: 'assistant', content: 'HIGH — 3 prior rugs compound across sessions' })
+    })
+    expect(result.current.messages[1].content).toBe('HIGH — 3 prior rugs compound across sessions')
+    expect(result.current.messages[1].tools).toEqual(['recall', 'solana_forensics-trace_funding'])
+  })
+
+  it('replaces the bubble when a genuine new turn arrives, even if shorter than the prior content', () => {
+    // A non-tool, non-cumulative assistant frame is a new turn (not a micro-frame): even if its
+    // answer is shorter than an earlier preamble, it must still land in the bubble — otherwise
+    // the hook would freeze on the preamble forever.
+    let onEvent!: (e: ChatEvent) => void
+    mockedStreamChat.mockImplementation((_message, _mint, ev) => {
+      onEvent = ev
+      return Promise.resolve()
+    })
+    const { result } = renderHook(() => useChatStream())
+    act(() => {
+      result.current.send('is it safe?', 'MINT')
+    })
+
+    // A long preamble turn.
+    act(() => {
+      onEvent({ role: 'assistant', content: 'I will thoroughly investigate this deployer now.' })
+    })
+    expect(result.current.messages[1].content).toBe(
+      'I will thoroughly investigate this deployer now.',
+    )
+
+    // A genuine new turn (no tool) with a SHORTER answer — must replace, not freeze.
+    act(() => {
+      onEvent({ role: 'assistant', content: 'HIGH risk.' })
+    })
+    expect(result.current.messages[1].content).toBe('HIGH risk.')
+  })
 })
