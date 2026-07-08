@@ -9,9 +9,9 @@ export function MemoryBand() {
     <div className="band">
       <div className="stat">
         <div className="sl">memory vs cold analysis</div>
-        <div className="sv tnum">99,313×</div>
+        <div className="sv tnum">220,209×</div>
         <div className="ss">
-          recall in <b style={{ color: 'var(--text)' }}>2.7{' '}ms</b> vs <b style={{ color: 'var(--text)' }}>268{' '}s</b> re-deriving on-chain
+          recall in <b style={{ color: 'var(--text)' }}>0.8{' '}ms</b> vs <b style={{ color: 'var(--text)' }}>175.5{' '}s</b> re-deriving on-chain
         </div>
         <div className="spark">
           <i style={{ height: '20%' }} />

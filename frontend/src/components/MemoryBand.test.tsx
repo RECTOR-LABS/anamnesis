@@ -10,7 +10,7 @@ describe('MemoryBand', () => {
 
   it('renders the memory-vs-cold-analysis ratio', () => {
     render(<MemoryBand />)
-    expect(screen.getByText('99,313×')).toBeInTheDocument()
+    expect(screen.getByText('220,209×')).toBeInTheDocument()
   })
 
   it('renders 3 session dots: 2 medium (.d.m) and 1 high (.d.h)', () => {
@@ -48,7 +48,7 @@ describe('MemoryBand', () => {
     const firstStat = container.querySelectorAll('.stat')[0]
 
     expect(firstStat.querySelector('.ss')).toHaveTextContent(
-      'recall in 2.7 ms vs 268 s re-deriving on-chain',
+      'recall in 0.8 ms vs 175.5 s re-deriving on-chain',
     )
   })
 })
