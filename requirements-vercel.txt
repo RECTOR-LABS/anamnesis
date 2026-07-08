@@ -1,0 +1,31 @@
+# Serverless install spec for the Vercel deploy (see deploy/vercel-runbook.md).
+#
+# This is the SLIM subset of the engine deps — everything the dashboard + agent + forensic MCP
+# child need to run on a Vercel Python function, with the qwen-agent `[gui]` extra DROPPED.
+# `[gui]` pulls gradio (187 MB) + modelscope_studio (46 MB) which only the legacy chat WebUI
+# (`app.py`) uses; the dashboard product (`api.main:app`) never imports them (verified:
+# `grep -r "import gradio" api/ src/anamnesis/ mcp/` is empty, and qwen_agent core does not
+# hard-import gradio — it is lazy in qwen_agent/gui/gradio_dep.py only).
+#
+# Measured site-packages for this set (python 3.12, fresh venv): ~175 MB — comfortably under
+# Vercel's 250 MB uncompressed function limit. `uvicorn` is intentionally absent: Vercel is the
+# ASGI server, the function just exports the FastAPI `app` object (it re-appears transitively
+# via the `mcp` SDK, which is harmless). numpy/PIL remain as qwen-agent core transitives.
+#
+# The `anamnesis` package itself is installed SEPARATELY by the buildCommand
+# (`pip install --no-deps .`) — NOT via `-e .` here, because the project's base `dependencies`
+# pin `qwen-agent[gui,mcp]` and a plain `pip install -e .` would re-pull gradio. `--no-deps`
+# installs only the anamnesis package into site-packages, which BOTH this function AND the
+# spawned MCP child (a fresh `sys.executable` process that does not inherit a sys.path shim)
+# need in order to `import anamnesis`.
+#
+# Pins mirror pyproject.toml's validated versions (the dev/.venv-validated set that coexists
+# with mcp==1.12.4). Bump deliberately and re-measure the size.
+qwen-agent[mcp]==0.0.34
+soundfile>=0.12
+openai>=1.40
+httpx>=0.27
+pymongo>=4.6,<5
+mcp==1.12.4
+fastapi==0.138.0
+sse-starlette==3.4.5
