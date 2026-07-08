@@ -1,10 +1,11 @@
 # Vercel deploy runbook — Anamnesis dashboard (serverless)
 
-> Status: **plan + verified feasibility**. Not yet deployed — blocked on two provisioning gates
-> (Pro tier, MongoDB Atlas) and one architectural decision (the `api/` naming collision, §4),
-> then an empirical first-deploy to close the platform-specific unknowns (§6). The dashboard +
-> agent run unchanged; this is a *deployment-target* change, not an engine change. The frozen
-> engine (`src/anamnesis/**`, `mcp/**`) is untouched throughout.
+> Status: **plan + verified feasibility; rename done**. Not yet deployed — blocked on one
+> provisioning step (MongoDB, §0.2) and an empirical first-deploy to close the
+> platform-specific unknowns (§6). **No Pro tier needed** — Hobby's 300 s covers the ~45 s chat
+> (Fluid Compute, default since Apr 2025); the `api/` collision is resolved (renamed to `app/`).
+> The dashboard + agent run unchanged; this is a *deployment-target* change, not an engine
+> change. The frozen engine (`src/anamnesis/**`, `mcp/**`) is untouched throughout.
 
 ## TL;DR — is Vercel viable?
 
@@ -28,33 +29,63 @@ function env (§6.2). Both have fallbacks.
 
 ## 0. Provisioning gates (RECTOR — do these first, in parallel)
 
-1. **Vercel Pro tier** (`rz1989s`). Required for `maxDuration: 60` — the chat turn streams
-   ~45 s (LLM + forensic-tool I/O); Hobby's 10 s cap will cut it off mid-turn. Pro is ~$20/mo.
-2. **MongoDB Atlas M0 (free, 512 MB)** — the ECS self-hosted Mongo is gone. Create a free
-   cluster, a DB user, and allow network access (Vercel egress IPs are dynamic; for a public
-   demo either allow `0.0.0.0/0` or use Vercel's static IPs / Atlas's Vercel integration). Hand
-   back the `mongodb+srv://...` URI. Then **re-seed the demo serial-rugger memory** into Atlas:
+1. **Vercel plan — Hobby is enough for duration.** The chat streams ~45 s; with Fluid Compute
+   (enabled by default for new projects since Apr 23, 2025), **Hobby allows 300 s** for Python
+   functions — so Pro is **not** required for `maxDuration`. (Pro would raise the cap to 800 s /
+   1800 s beta and the bundle size to 500 MB, but neither is needed: ~175 MB deps, ~45 s chat.)
+   `vercel.json` sets `maxDuration: 60` as headroom. Only upgrade to Pro if a Hobby limit bites
+   (execution-unit quota, cold-start frequency) — none expected for a low-traffic demo.
+   - Duration table: https://vercel.com/docs/functions/configuring-functions/duration
+   - Fluid Compute default: https://vercel.com/docs/fluid-compute
+   - Size + runtimes (Python included): https://vercel.com/docs/functions/limitations
+2. **MongoDB** — the ECS self-hosted Mongo is gone. Two paths, both free:
+   - **Vercel Marketplace → MongoDB Atlas** (https://vercel.com/marketplace/mongodb-atlas):
+     native integration, available on all plans (incl. Hobby), auto-injects the connection URI
+     as an env var (exactly the `ANAMNESIS_MONGODB_URI` the engine reads). Verify at "Add"
+     whether it offers the **M0 free tier** and whether it bills through Vercel or Atlas (the
+     marketplace page is client-rendered, so it couldn't be scraped).
+   - **Fallback (always $0):** create an Atlas M0 free cluster (512 MB, plenty) directly on
+     mongodb.com, grab the `mongodb+srv://…` URI, paste it as `ANAMNESIS_MONGODB_URI` on the
+     Vercel project. Functionally identical — the integration is just a convenience that sets the
+     same env var. Allow network access (Vercel egress IPs are dynamic; for a public demo allow
+     `0.0.0.0/0`, or use Atlas's Vercel integration / Vercel static IPs).
+   Then **re-seed the demo serial-rugger memory** into it:
    `ANAMNESIS_MONGODB_URI=<atlas-uri> PYTHONPATH=src python scripts/seed_demo.py` (idempotent).
 
-## 1. The serverless install (verified)
+## 1. The serverless install (verified + one empirical unknown)
 
-`requirements-vercel.txt` (repo root) is the slim set. The build installs it **plus** the
-`anamnesis` package with `--no-deps` so it lands in site-packages without re-pulling `[gui]`:
+`requirements-vercel.txt` (repo root) is the slim set (qwen-agent with the mcp extra, [gui]
+dropped; no uvicorn). Measured **~175 MB** site-packages (python 3.12, fresh venv) — under the
+250 MB cap.
+
+The `vercel.json` buildCommand installs the slim deps + anamnesis **editable** + builds the SPA:
 
 ```
-pip install -r requirements-vercel.txt && pip install --no-deps .
+pip install -r requirements-vercel.txt && pip install -e . --no-deps && cd frontend && npm ci && npm run build
 ```
 
-`--no-deps .` is load-bearing: `pip install -e .` would follow `pyproject.toml`'s base
-`dependencies` (`qwen-agent[gui,mcp]==0.0.34`) and drag gradio back in. `--no-deps` copies only
-the `anamnesis` package into site-packages — which **both** the function **and** the spawned MCP
-child need (the child is a fresh `sys.executable` process; it does not inherit the parent's
-sys.path shim). *(The repo's `mcp/` dir does not shadow the pip `mcp` SDK: when the child runs
-`mcp/solana_forensics_mcp.py`, sys.path[0] is the dir containing the script, so `import mcp`
-resolves to the SDK in site-packages.)*
+`-e . --no-deps` (editable, no deps) is load-bearing and subtle:
+- **No `[gui]`:** `--no-deps` skips `pyproject.toml`'s base `dependencies` (`qwen-agent[gui,mcp]`),
+  so gradio/modelscope stay out. (A plain `pip install -e .` would drag them back in.)
+- **Editable, not copied to site-packages:** the frozen `mcp_entrypoint_path()` resolves the MCP
+  child as `Path(__file__).resolve().parents[3] / "mcp" / "solana_forensics_mcp.py"`, which only
+  holds when `anamnesis` is imported from `<bundle>/src/anamnesis/agent/agent.py` (parents[3] =
+  bundle root, where `mcp/` lives). A NON-editable `pip install . --no-deps` copies anamnesis
+  into site-packages -> `__file__` points there -> `parents[3]` is the site-packages parent ->
+  the MCP entrypoint path breaks. The **editable** install keeps `__file__` at `src/anamnesis/…`
+  AND makes `anamnesis` importable for the spawned MCP child too: the site-packages `.pth`/finder
+  it creates is processed at every Python startup, so the fresh child process (which does NOT run
+  the `api/index.py` path shim) still gets `src/` on its path.
 
-Measured: **~175 MB** site-packages (python 3.12, fresh venv). Under the 250 MB cap with room
-for `src/` + `api/` + `mcp/` + the built SPA.
+⚠️ **Key first-deploy unknown (see §6.4):** whether Vercel's function bundling preserves an
+editable install's `.pth`/finder with a runtime-valid path to the bundled `src/` (editable
+`.pth`s record an absolute build-time path that may not exist in the Lambda extract dir).
+`vercel.json` lists `src/**, mcp/**, app/**` in `includeFiles` so the files ARE bundled; only the
+path wiring is in question, with a hand-placed `.pth` as the fallback.
+
+*(The repo's `mcp/` dir does not shadow the pip `mcp` SDK: the child runs
+`mcp/solana_forensics_mcp.py` with sys.path[0] = the dir containing the script, so `import mcp`
+resolves to the SDK in site-packages, not the repo dir.)*
 
 ## 2. The architecture
 
@@ -120,16 +151,27 @@ and keeps it for the chat turn. Lambda-like envs allow `subprocess`, but cold-st
 qwen-agent + spawn child + first LLM call) adds ~5–15 s — within the 60 s budget. Verify the
 child connects + the Helius key (passed via the env allowlist, not inheritance) reaches it.
 
-### 6.3 `buildCommand` behavior
-The combined install (`pip install -r requirements-vercel.txt && pip install --no-deps .`) +
-SPA build (`cd frontend && npm ci && npm run build`) is wired into `vercel.json buildCommand`.
-Confirm Vercel runs it as the single build (it should override default framework detection).
+### 6.3 `buildCommand` + vercel.json (best-guess, validate on first deploy)
+The buildCommand (`pip install -r requirements-vercel.txt && pip install -e . --no-deps && cd
+frontend && npm ci && npm run build`) + `outputDirectory: frontend/dist` + the single `api/index.py`
+function + the `/api/(.*)` rewrite are wired in `vercel.json`. Confirm Vercel runs the
+buildCommand as the single build (overriding default framework detection) and that `api/` now
+holds only `index.py` (the rename moved the FastAPI package to `app/`) — so no stray functions.
+The `vercel.json` shape (esp. `includeFiles` array + `functions` key) is best-guess from the
+docs; expect to iterate it on the first deploy.
+
+### 6.4 Editable-install `.pth` survives bundling? (key unknown)
+The editable `pip install -e . --no-deps` writes a site-packages `.pth`/finder pointing at the
+build-time `src/` path. In Vercel's Lambda extract, that absolute path may not exist. If the
+spawned MCP child can't `import anamnesis` (or `mcp_entrypoint_path()` 404s), drop a hand-placed
+`<site-packages>/anamnesis_src.pth` containing the runtime `src/` path (e.g. `/var/task/src`) —
+`includeFiles` already bundles `src/**`, so only the path wiring needs fixing.
 
 ## 7. Known limitations (v1)
 
 - Agent chat `/graphs/*.html` link 404s (§3). Dashboard tile works.
 - Cold-start latency on the first request after idle (~5–15 s), then warm.
-- Vercel Pro cost ($20/mo) + Atlas (free tier) — ongoing.
+- Vercel cost: **$0** (Hobby covers it — 300 s duration, 250 MB size at ~175 MB deps) + Atlas M0 (free). Pro only if a Hobby limit bites.
 - Judging note: the demo is **already submitted** (video + Alibaba proof + blog). A live URL is
   additive, not required. Only link it on Devpost if the smoke (§5.4) is fully green — a
   half-broken live demo is a liability.
