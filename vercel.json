@@ -4,15 +4,9 @@
   "outputDirectory": "frontend/dist",
   "functions": {
     "api/index.py": {
-      "maxDuration": 60,
+      "maxDuration": 300,
       "memory": 1024,
-      "includeFiles": [
-        "src/**",
-        "mcp/**",
-        "app/**",
-        "pyproject.toml",
-        "requirements-vercel.txt"
-      ]
+      "includeFiles": "{src,mcp,app}/**"
     }
   },
   "rewrites": [
