@@ -1,9 +1,11 @@
 # Vercel deploy runbook — Anamnesis dashboard (serverless)
 
-> Status: **plan + verified feasibility; rename done**. Not yet deployed — blocked on one
-> provisioning step (MongoDB, §0.2) and an empirical first-deploy to close the
-> platform-specific unknowns (§6). **No Pro tier needed** — Hobby's 300 s covers the ~45 s chat
+> Status: **DEPLOYED (2026-07-10)** — live at `https://anamnesis.rectorspace.com`
+> (`/api/health` → 200, SPA root → 200, SSL auto-provisioned). §6.3/§6.4 updated in place with
+> the empirical findings. Git connected (push → preview auto-deploy); repo made public
+> (hackathon requirement). **No Pro tier needed** — Hobby's 300 s covers the ~45 s chat
 > (Fluid Compute, default since Apr 2025); the `api/` collision is resolved (renamed to `app/`).
+> Remaining: Atlas Mongo (§0.2) + the MCP-child `.pth` on `/api/chat` (§6.4) — not yet exercised.
 > The dashboard + agent run unchanged; this is a *deployment-target* change, not an engine
 > change. The frozen engine (`src/anamnesis/**`, `mcp/**`) is untouched throughout.
 
@@ -33,7 +35,8 @@ function env (§6.2). Both have fallbacks.
    (enabled by default for new projects since Apr 23, 2025), **Hobby allows 300 s** for Python
    functions — so Pro is **not** required for `maxDuration`. (Pro would raise the cap to 800 s /
    1800 s beta and the bundle size to 500 MB, but neither is needed: ~175 MB deps, ~45 s chat.)
-   `vercel.json` sets `maxDuration: 60` as headroom. Only upgrade to Pro if a Hobby limit bites
+   `vercel.json` sets `maxDuration: 300` — Hobby's Fluid Compute ceiling (the prior `60` was
+   a stale cap that squeezed even the ~45 s chat; 300 s also covers the ~180 s deployer scan). Only upgrade to Pro if a Hobby limit bites
    (execution-unit quota, cold-start frequency) — none expected for a low-traffic demo.
    - Duration table: https://vercel.com/docs/functions/configuring-functions/duration
    - Fluid Compute default: https://vercel.com/docs/fluid-compute
@@ -77,11 +80,12 @@ pip install -r requirements-vercel.txt && pip install -e . --no-deps && cd front
   it creates is processed at every Python startup, so the fresh child process (which does NOT run
   the `api/index.py` path shim) still gets `src/` on its path.
 
-⚠️ **Key first-deploy unknown (see §6.4):** whether Vercel's function bundling preserves an
-editable install's `.pth`/finder with a runtime-valid path to the bundled `src/` (editable
-`.pth`s record an absolute build-time path that may not exist in the Lambda extract dir).
-`vercel.json` lists `src/**, mcp/**, app/**` in `includeFiles` so the files ARE bundled; only the
-path wiring is in question, with a hand-placed `.pth` as the fallback.
+✅ **Parent import RESOLVED on first deploy (2026-07-10):** `src/` IS bundled (the
+`{src,mcp,app}/**` `includeFiles` glob works) and `anamnesis` imports cleanly once `api/index.py`
+runs its `sys.path` shim. The shim runs because of the entrypoint force (§6.3) — without it
+Vercel imported `app/main.py` directly and `anamnesis` was unreachable. The **only** remaining
+`.pth` unknown is the spawned MCP *child* (a fresh `sys.executable` that does NOT run the shim)
+— §6.4, exercised on `/api/chat` (needs env keys + Mongo).
 
 *(The repo's `mcp/` dir does not shadow the pip `mcp` SDK: the child runs
 `mcp/solana_forensics_mcp.py` with sys.path[0] = the dir containing the script, so `import mcp`
@@ -92,7 +96,7 @@ resolves to the SDK in site-packages, not the repo dir.)*
 - **SPA** (`frontend/dist`) → served as **Vercel static** (CDN). `outputDirectory: frontend/dist`.
 - **API** → **one Python function** that exports the FastAPI ASGI app (`app.main:app`).
   Vercel's runtime detects `app` and serves it; a rewrite routes `/api/*` to it.
-  `maxDuration: 60`, `memory: 1024`.
+  `maxDuration: 300`, `memory: 1024` (see §0.1).
 - **Env** (set on the Vercel project): `ANAMNESIS_DASHSCOPE_API_KEY`, `ANAMNESIS_HELIUS_API_KEY`,
   `ANAMNESIS_MONGODB_URI` (the Atlas URI). The MCP child gets the Helius key via its `env`
   block (not inheritance — see `anamnesis.agent.agent.build_function_list`).
@@ -151,21 +155,37 @@ and keeps it for the chat turn. Lambda-like envs allow `subprocess`, but cold-st
 qwen-agent + spawn child + first LLM call) adds ~5–15 s — within the 60 s budget. Verify the
 child connects + the Helius key (passed via the env allowlist, not inheritance) reaches it.
 
-### 6.3 `buildCommand` + vercel.json (best-guess, validate on first deploy)
-The buildCommand (`pip install -r requirements-vercel.txt && pip install -e . --no-deps && cd
-frontend && npm ci && npm run build`) + `outputDirectory: frontend/dist` + the single `api/index.py`
-function + the `/api/(.*)` rewrite are wired in `vercel.json`. Confirm Vercel runs the
-buildCommand as the single build (overriding default framework detection) and that `api/` now
-holds only `index.py` (the rename moved the FastAPI package to `app/`) — so no stray functions.
-The `vercel.json` shape (esp. `includeFiles` array + `functions` key) is best-guess from the
-docs; expect to iterate it on the first deploy.
+### 6.3 `buildCommand` + `vercel.json` — RESOLVED on first deploy (2026-07-10)
+The buildCommand + `outputDirectory: frontend/dist` + the single `api/index.py` function + the
+`/api/(.*)` rewrite all work as designed — Vercel runs the buildCommand as the single build,
+`api/` holds only `index.py`, no stray functions. Three things the "best-guess" got WRONG and
+were fixed empirically (commit `a1c2d4f`, validated: `/api/health` → 200, SPA root → 200):
 
-### 6.4 Editable-install `.pth` survives bundling? (key unknown)
-The editable `pip install -e . --no-deps` writes a site-packages `.pth`/finder pointing at the
-build-time `src/` path. In Vercel's Lambda extract, that absolute path may not exist. If the
-spawned MCP child can't `import anamnesis` (or `mcp_entrypoint_path()` 404s), drop a hand-placed
+1. **`includeFiles` must be a glob STRING, not an array.** The array form
+   (`["src/**", "mcp/**", …]`) is a latent schema error — Vercel rejects it
+   (`functions.api/index.py.includeFiles should be string`). The project had never deployed
+   before, so it never surfaced. Fixed to `"{src,mcp,app}/**"` (brace glob — micromatch expands
+   it; confirmed: `src/` is bundled and `anamnesis` imports).
+2. **Vercel's entrypoint auto-detection grabbed `app/main.py`, not `api/index.py`.** Vercel
+   scans `src/`/`app/`/`api/` for `main.py`/`app.py`/etc.; the `api/`→`app/` rename created a
+   literal `app/main.py`, which Vercel picked as the entry — bypassing the `api/index.py` shim,
+   so `src/` was never on `sys.path` and `import anamnesis` failed (`ModuleNotFoundError: No
+   module named 'anamnesis'`, HTTP 500 FUNCTION_INVOCATION_FAILED). Fixed by forcing the
+   entrypoint in `pyproject.toml`: `[tool.vercel] entrypoint = "api.index:app"` (Vercel's
+   documented override; the value format is `module:variable`) + `api/__init__.py` so
+   `api.index` resolves as a module.
+3. **`maxDuration` was `60`** — a stale cap below Hobby's 300 s Fluid Compute ceiling. Raised
+   to `300` (60 s squeezed even the ~45 s chat; 300 s also covers the ~180 s deployer scan).
+
+### 6.4 Editable-install `.pth` survives bundling? — parent RESOLVED; child OPEN
+The parent process imports `anamnesis` fine — the `api/index.py` shim puts `src/` on `sys.path`,
+and §6.3 confirmed `src/` is bundled — so **this half is closed.** The open half is the spawned
+MCP *child*: a fresh `sys.executable` that does NOT run the shim, so it relies on the editable
+install's site-packages `.pth`/finder to see `src/`. If, when `/api/chat` is exercised, the child
+can't `import anamnesis` (or `mcp_entrypoint_path()` 404s), drop a hand-placed
 `<site-packages>/anamnesis_src.pth` containing the runtime `src/` path (e.g. `/var/task/src`) —
-`includeFiles` already bundles `src/**`, so only the path wiring needs fixing.
+`includeFiles` already bundles `src/**`, so only the path wiring needs fixing. Not yet exercised
+(needs env keys + Mongo + a real `/api/chat` call).
 
 ## 7. Known limitations (v1)
 
