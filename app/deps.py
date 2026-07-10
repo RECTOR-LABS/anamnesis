@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from functools import lru_cache
+import os
 
 from anamnesis import config
 from anamnesis.agent.actions import assess_and_act
@@ -35,10 +36,23 @@ from anamnesis.memory.mongo_store import MongoRepository
 
 @lru_cache(maxsize=1)
 def _client():
-    """One Mongo client shared by memory + alerts (mirrors agent.tools._client)."""
+    """One Mongo client shared by memory + alerts (mirrors agent.tools._client).
+
+    The frozen engine reads `ANAMNESIS_MONGODB_URI`; the Vercel MongoDB Atlas marketplace
+    integration auto-injects the connection string as `MONGODB_URI` (sensitive — not
+    readable via `vercel env pull`). Bridge them here: prefer the engine's name, fall back
+    to the integration's. This is deploy-serialization glue (api/app layer), not engine.
+    """
     from pymongo import MongoClient
 
-    return MongoClient(config.require("ANAMNESIS_MONGODB_URI"))
+    uri = os.environ.get("ANAMNESIS_MONGODB_URI") or os.environ.get("MONGODB_URI")
+    if not uri:
+        raise RuntimeError(
+            "ANAMNESIS_MONGODB_URI is not set. Copy .env.example to .env and fill in "
+            "ANAMNESIS_MONGODB_URI, or connect the Vercel MongoDB Atlas integration (which "
+            "injects MONGODB_URI)."
+        )
+    return MongoClient(uri)
 
 
 @lru_cache(maxsize=1)
