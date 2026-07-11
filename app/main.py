@@ -14,14 +14,14 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from anamnesis.logging_setup import quiet_http_loggers
-from api.routes.assess import router as assess_router
-from api.routes.chat import router as chat_router
-from api.routes.deployer import router as deployer_router
-from api.routes.funding import router as funding_router
-from api.routes.graph import router as graph_router
-from api.routes.graph_static import router as graph_static_router
-from api.routes.price import router as price_router
-from api.routes.profile import router as profile_router
+from app.routes.assess import router as assess_router
+from app.routes.chat import router as chat_router
+from app.routes.deployer import router as deployer_router
+from app.routes.funding import router as funding_router
+from app.routes.graph import router as graph_router
+from app.routes.graph_static import router as graph_static_router
+from app.routes.price import router as price_router
+from app.routes.profile import router as profile_router
 
 app = FastAPI(title="Anamnesis API")
 
@@ -32,6 +32,27 @@ app = FastAPI(title="Anamnesis API")
 # events — and covers the assess route too. logging_setup imports only stdlib `logging`, so
 # this stays CI-safe.
 quiet_http_loggers()
+
+# Vercel serverless bridge for the frozen engine's MCP-child dep isolation.
+# The frozen agent (anamnesis.agent.agent.build_function_list) spawns the forensic MCP server as a
+# fresh `sys.executable` child. Vercel isolates the pip deps to /tmp/_vc_deps (parent-only, via
+# vc_init.py), and the mcp SDK's child-env allowlist (DEFAULT_INHERITED_ENV_VARS = HOME/PATH/...)
+# excludes PYTHONPATH — so the child can't `import mcp` (the SDK) or `anamnesis`. /var/lang is
+# read-only, so a runtime .pth can't fix it. Bridge by widening the allowlist to carry PYTHONPATH
+# pointing at the deps + src. Only on Vercel (detect /var/task/src). Pinned mcp==1.12.4 — the
+# `get_default_environment` symbol is stable. See deploy/vercel-runbook.md §6.4.
+import os as _os
+if _os.path.isdir("/var/task/src"):
+    try:
+        import mcp.client.stdio as _stdio
+        _orig_gde = _stdio.get_default_environment
+        def _gde_with_deps() -> dict:
+            env = _orig_gde()
+            env["PYTHONPATH"] = "/tmp/_vc_deps/lib/python3.12/site-packages:/var/task/src:/var/task:/var/task/_vendor"
+            return env
+        _stdio.get_default_environment = _gde_with_deps
+    except Exception:
+        pass  # non-fatal; /api/chat will surface the error if it matters
 
 app.add_middleware(
     CORSMiddleware,
@@ -55,9 +76,10 @@ def health() -> dict:
     return {"status": "ok"}
 
 
+
 # ── Frontend (Track B) ────────────────────────────────────────────────────────────────────────
 # Serve the built React dashboard (frontend/dist) from this same app, so ONE
-# `uvicorn api.main:app` container answers both the SPA at `/` and the API at `/api/*`. The mount
+# `uvicorn app.main:app` container answers both the SPA at `/` and the API at `/api/*`. The mount
 # is guarded on the build's presence: a checkout with no `npm run build` output (CI, the backend
 # test suite, a bare Vite dev workflow) imports cleanly and still answers `/api/*` — the SPA is
 # simply absent. Mounted LAST, so every `/api/*` route is matched before this catch-all.

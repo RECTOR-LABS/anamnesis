@@ -1,7 +1,7 @@
 """GET /graphs/{filename}: serve a rendered cluster-graph HTML file.
 
 Track B dropped the standalone graph static server (the daemon thread app.py ran over
-``config.GRAPHS_DIR``); the deploy now runs ``uvicorn api.main:app`` only. The frozen agent's
+``config.GRAPHS_DIR``); the deploy now runs ``uvicorn app.main:app`` only. The frozen agent's
 ``cluster_graph`` tool still renders an interactive vis-network page into ``config.GRAPHS_DIR`` and
 returns a link built from ``config.GRAPHS_BASE_URL``. Pointing that base at ``/graphs`` (compose
 sets ``ANAMNESIS_GRAPHS_BASE_URL=/graphs``) makes the link same-origin —

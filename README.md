@@ -75,7 +75,7 @@ pip install -e ".[api]"
 # 3. (Demo) seed the reproducible serial-rugger memory, then build + serve the dashboard
 PYTHONPATH=src python scripts/seed_demo.py      # idempotent; --reset to start clean, --metric for the N× number
 (cd frontend && npm install && npm run build)   # build the React SPA → frontend/dist (served at /)
-uvicorn api.main:app --port 8000                # one server: SPA at / + API at /api/* → open http://localhost:8000, click the GYaS suggestion → instant HIGH
+uvicorn app.main:app --port 8000                # one server: SPA at / + API at /api/* → open http://localhost:8000, click the GYaS suggestion → instant HIGH
 
 # 4. Tests (adds the [dev] extra: pytest, ruff, respx, mongomock — [api] kept for the API tests)
 pip install -e ".[api,dev]"

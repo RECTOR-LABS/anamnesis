@@ -4,8 +4,8 @@ lazily after the verdict.
 
 No engine logic lives here — `token_profile_dict` (anamnesis.forensic.mcp_tools) already
 composes the grounded Helius reads into the wire-shaped dict; this route only resolves the
-HeliusClient singleton via the `deps` module (`from api import deps` then `deps.get_helius()`,
-never `from api.deps import get_helius`, so tests can monkeypatch `deps.get_helius`) and calls
+HeliusClient singleton via the `deps` module (`from app import deps` then `deps.get_helius()`,
+never `from app.deps import get_helius`, so tests can monkeypatch `deps.get_helius`) and calls
 the serializer with its DEFAULT `lp_resolver` (mcp_tools.py's `_lp_unanalyzed`) — so `lp.status`
 always reports "unknown" here (not analyzed), which the dashboard renders as "unverified". The
 LP-aware resolver (`deps.build_profile` / `build_lp_aware_profile`) is deliberately NOT wired in
@@ -26,7 +26,7 @@ from fastapi import APIRouter
 
 from anamnesis.forensic.helius import HeliusError
 from anamnesis.forensic.mcp_tools import token_profile_dict
-from api import deps
+from app import deps
 
 router = APIRouter()
 

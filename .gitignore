@@ -28,3 +28,5 @@ dist/
 # Local session handoff (not published)
 HANDOFF.md
 *.log
+.vercel
+.env*

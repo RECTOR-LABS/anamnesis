@@ -1,6 +1,6 @@
 """HTTP + pure-function tests for GET /api/graph/{deployer} and GET /api/price/{mint}.
 
-Route tests use FastAPI's TestClient with api.deps.get_memory / api.deps.get_dex
+Route tests use FastAPI's TestClient with app.deps.get_memory / app.deps.get_dex
 monkeypatched to network-free fakes (an InMemoryRepository-backed ForensicMemory; a fake
 DexScreener client) — no Mongo, no HTTP. graph_dict/price_points are also each exercised
 directly against hand-built inputs, proving the pure serializer/reconstruction logic in
@@ -18,9 +18,9 @@ from anamnesis.memory.models import Provenance, make_edge
 from anamnesis.memory.repository import InMemoryRepository
 from fastapi.testclient import TestClient
 
-from api import deps
-from api.cards import graph_dict, price_points
-from api.main import app
+from app import deps
+from app.cards import graph_dict, price_points
+from app.main import app
 
 client = TestClient(app)
 

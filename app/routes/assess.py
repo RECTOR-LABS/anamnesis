@@ -1,9 +1,9 @@
 """POST /api/assess: the HTTP surface over the frozen engine's assess_and_act pipeline.
 
-No engine logic lives here. The route validates the request, delegates to `api.deps.assess`
-(looked up via the module — `from api import deps` then `deps.assess(...)`, never
-`from api.deps import assess` — so tests can `monkeypatch.setattr(deps, "assess", ...)`), and
-reshapes the result through `api.cards.verdict_card`.
+No engine logic lives here. The route validates the request, delegates to `app.deps.assess`
+(looked up via the module — `from app import deps` then `deps.assess(...)`, never
+`from app.deps import assess` — so tests can `monkeypatch.setattr(deps, "assess", ...)`), and
+reshapes the result through `app.cards.verdict_card`.
 
 Two boundaries this thin route DOES own (a public entry point per CLAUDE.md):
 - Shape validation — a missing `mint` field 422s via pydantic; a present-but-malformed `mint`
@@ -19,9 +19,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from anamnesis.forensic.helius import HeliusError
-from api import deps
-from api.cards import verdict_card
-from api.validation import valid_mint
+from app import deps
+from app.cards import verdict_card
+from app.validation import valid_mint
 
 router = APIRouter()
 

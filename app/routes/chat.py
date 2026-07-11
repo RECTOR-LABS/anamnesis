@@ -52,7 +52,7 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 from starlette.concurrency import iterate_in_threadpool
 
-from api import deps
+from app import deps
 
 router = APIRouter()
 

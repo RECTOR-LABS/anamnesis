@@ -15,12 +15,13 @@ existing constructors together for the routes.
 CI-safety: every top-level import below is qwen-agent-free (pymongo, anamnesis.forensic.*,
 anamnesis.memory.*, anamnesis.agent.tools, anamnesis.agent.actions — none pull in qwen-agent at
 import time). Only get_agent() touches qwen-agent, via a lazy import inside the function body,
-so `import api.deps` succeeds in CI (which installs no qwen-agent/mcp/openai).
+so `import app.deps` succeeds in CI (which installs no qwen-agent/mcp/openai).
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from functools import lru_cache
+import os
 
 from anamnesis import config
 from anamnesis.agent.actions import assess_and_act
@@ -35,10 +36,23 @@ from anamnesis.memory.mongo_store import MongoRepository
 
 @lru_cache(maxsize=1)
 def _client():
-    """One Mongo client shared by memory + alerts (mirrors agent.tools._client)."""
+    """One Mongo client shared by memory + alerts (mirrors agent.tools._client).
+
+    The frozen engine reads `ANAMNESIS_MONGODB_URI`; the Vercel MongoDB Atlas marketplace
+    integration auto-injects the connection string as `MONGODB_URI` (sensitive — not
+    readable via `vercel env pull`). Bridge them here: prefer the engine's name, fall back
+    to the integration's. This is deploy-serialization glue (api/app layer), not engine.
+    """
     from pymongo import MongoClient
 
-    return MongoClient(config.require("ANAMNESIS_MONGODB_URI"))
+    uri = os.environ.get("ANAMNESIS_MONGODB_URI") or os.environ.get("MONGODB_URI")
+    if not uri:
+        raise RuntimeError(
+            "ANAMNESIS_MONGODB_URI is not set. Copy .env.example to .env and fill in "
+            "ANAMNESIS_MONGODB_URI, or connect the Vercel MongoDB Atlas integration (which "
+            "injects MONGODB_URI)."
+        )
+    return MongoClient(uri)
 
 
 @lru_cache(maxsize=1)
@@ -97,7 +111,7 @@ def assess(mint: str) -> dict:
 @lru_cache(maxsize=1)
 def get_agent():
     """Lazy qwen-agent Assistant singleton. Imports anamnesis.agent.agent (which pulls in
-    qwen-agent) inside the function body — not at module top — so `import api.deps` stays
+    qwen-agent) inside the function body — not at module top — so `import app.deps` stays
     CI-safe. Exercised by Task 4's chat SSE route, not unit-tested here (CI has no qwen-agent
     installed)."""
     from anamnesis.agent.agent import build_agent

@@ -29,6 +29,14 @@ api = ["fastapi==0.138.0", "uvicorn[standard]==0.49.0", "sse-starlette==3.4.5"]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
+# Vercel Python runtime: force the entrypoint to the api/index.py shim, which puts src/ on
+# sys.path so the frozen `anamnesis` package imports. Without this, Vercel's entrypoint
+# auto-detection picks app/main.py (a "main.py inside app/" — one of its search patterns) as
+# the entry, bypassing the shim, so `anamnesis` is unimportable (ModuleNotFoundError). See
+# deploy/vercel-runbook.md §1/§6.4.
+[tool.vercel]
+entrypoint = "api.index:app"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

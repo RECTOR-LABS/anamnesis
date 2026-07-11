@@ -3,9 +3,9 @@
 No engine logic lives here — `recall_cluster` (anamnesis.memory.cluster) already performs
 the bounded, cycle-safe BFS walk over remembered edges around a seed, including node/edge
 caps and truncation. This route only resolves the memory singleton via the `deps` module
-(`from api import deps` then `deps.get_memory()`, never `from api.deps import get_memory`,
+(`from app import deps` then `deps.get_memory()`, never `from app.deps import get_memory`,
 so tests can `monkeypatch.setattr(deps, "get_memory", ...)`) and reshapes the result through
-`api.cards.graph_dict` for the wire.
+`app.cards.graph_dict` for the wire.
 
 Never 404s on an unknown deployer: `recall_cluster` degrades a seed with no remembered edges
 to a single, flag-less "wallet" node (tests/test_cluster.py::test_empty_seed_is_single_node),
@@ -17,8 +17,8 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from anamnesis.memory.cluster import recall_cluster
-from api import deps
-from api.cards import graph_dict
+from app import deps
+from app.cards import graph_dict
 
 router = APIRouter()
 

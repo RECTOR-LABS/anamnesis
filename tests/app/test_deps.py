@@ -1,4 +1,4 @@
-"""api.deps has four test surfaces: assess() wiring is proven with get_memory/get_alerts/
+"""app.deps has four test surfaces: assess() wiring is proven with get_memory/get_alerts/
 build_profile monkeypatched to in-memory fakes + a stub profile (no network, no real Mongo);
 the REAL _client/get_memory/get_alerts singleton constructors are proven against mongomock
 (still no network, no real Mongo) so a typo'd env var, a swapped constructor arg, or a dropped
@@ -16,7 +16,7 @@ from anamnesis.memory.alerts import InMemoryAlertStore, MongoAlertStore
 from anamnesis.memory.graph import ForensicMemory
 from anamnesis.memory.repository import InMemoryRepository
 
-from api import deps
+from app import deps
 
 
 def _stub_profile(mint: str) -> TokenProfile:
