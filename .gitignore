@@ -29,3 +29,4 @@ dist/
 HANDOFF.md
 *.log
 .vercel
+.env*

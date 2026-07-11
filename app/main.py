@@ -33,6 +33,27 @@ app = FastAPI(title="Anamnesis API")
 # this stays CI-safe.
 quiet_http_loggers()
 
+# Vercel serverless bridge for the frozen engine's MCP-child dep isolation.
+# The frozen agent (anamnesis.agent.agent.build_function_list) spawns the forensic MCP server as a
+# fresh `sys.executable` child. Vercel isolates the pip deps to /tmp/_vc_deps (parent-only, via
+# vc_init.py), and the mcp SDK's child-env allowlist (DEFAULT_INHERITED_ENV_VARS = HOME/PATH/...)
+# excludes PYTHONPATH — so the child can't `import mcp` (the SDK) or `anamnesis`. /var/lang is
+# read-only, so a runtime .pth can't fix it. Bridge by widening the allowlist to carry PYTHONPATH
+# pointing at the deps + src. Only on Vercel (detect /var/task/src). Pinned mcp==1.12.4 — the
+# `get_default_environment` symbol is stable. See deploy/vercel-runbook.md §6.4.
+import os as _os
+if _os.path.isdir("/var/task/src"):
+    try:
+        import mcp.client.stdio as _stdio
+        _orig_gde = _stdio.get_default_environment
+        def _gde_with_deps() -> dict:
+            env = _orig_gde()
+            env["PYTHONPATH"] = "/tmp/_vc_deps/lib/python3.12/site-packages:/var/task/src:/var/task:/var/task/_vendor"
+            return env
+        _stdio.get_default_environment = _gde_with_deps
+    except Exception:
+        pass  # non-fatal; /api/chat will surface the error if it matters
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -53,6 +74,7 @@ app.include_router(profile_router)
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok"}
+
 
 
 # ── Frontend (Track B) ────────────────────────────────────────────────────────────────────────
