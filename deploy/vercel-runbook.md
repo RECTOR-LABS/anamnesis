@@ -1,11 +1,15 @@
 # Vercel deploy runbook — Anamnesis dashboard (serverless)
 
-> Status: **DEPLOYED (2026-07-10)** — live at `https://anamnesis.rectorspace.com`
-> (`/api/health` → 200, SPA root → 200, SSL auto-provisioned). §6.3/§6.4 updated in place with
-> the empirical findings. Git connected (push → preview auto-deploy); repo made public
-> (hackathon requirement). **No Pro tier needed** — Hobby's 300 s covers the ~45 s chat
+> Status: **DEPLOYED + FUNCTIONAL (2026-07-10)** — live at `https://anamnesis.rectorspace.com`.
+> `/api/health` → 200, SPA root → 200, **`/api/assess` GYaS → HIGH 0.8511** (matches the
+> ECS/Colima result exactly; memory recalled from Atlas, alert+watchlist written back).
+> §6.3/§6.4 updated in place with the empirical findings. Git connected (push → preview
+> auto-deploy); repo made public (hackathon requirement). Mongo via the Vercel MongoDB Atlas
+> marketplace integration (auto-injects `MONGODB_URI`; bridged in `app/deps._client`).
+> **No Pro tier needed** — Hobby's 300 s covers the ~45 s chat
 > (Fluid Compute, default since Apr 2025); the `api/` collision is resolved (renamed to `app/`).
-> Remaining: Atlas Mongo (§0.2) + the MCP-child `.pth` on `/api/chat` (§6.4) — not yet exercised.
+> Remaining: `/api/chat` (SSE §6.1 + MCP-child `.pth` §6.4 — parent resolved, child OPEN) +
+> merge PR #43 to main so git→prod is canonical.
 > The dashboard + agent run unchanged; this is a *deployment-target* change, not an engine
 > change. The frozen engine (`src/anamnesis/**`, `mcp/**`) is untouched throughout.
 
