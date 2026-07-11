@@ -8,8 +8,11 @@
 > marketplace integration (auto-injects `MONGODB_URI`; bridged in `app/deps._client`).
 > **No Pro tier needed** — Hobby's 300 s covers the ~45 s chat
 > (Fluid Compute, default since Apr 2025); the `api/` collision is resolved (renamed to `app/`).
-> Remaining: `/api/chat` (SSE §6.1 + MCP-child `.pth` §6.4 — parent resolved, child OPEN) +
-> merge PR #43 to main so git→prod is canonical.
+> Remaining: merge PR #43 to main so git→prod is canonical.
+> **`/api/chat` works too** — 134 SSE frames, `event: done`, qwen-max reply using live Helius
+> reads via the spawned MCP child (SSE §6.1 + MCP-child §6.4 both RESOLVED, see below). Env
+> added: `QWEN_AGENT_DEFAULT_WORKSPACE=/tmp/qwen_workspace` (qwen-agent Storage needs a
+> writable dir; /var/task is read-only). Remaining: merge PR #43 to main (git→prod canonical).
 > The dashboard + agent run unchanged; this is a *deployment-target* change, not an engine
 > change. The frozen engine (`src/anamnesis/**`, `mcp/**`) is untouched throughout.
 
@@ -146,18 +149,17 @@ quickstart, `deploy/RUNBOOK.md`, and this runbook. The frozen engine (`src/anamn
 
 ## 6. Empirical unknowns (close on first deploy) + fallbacks
 
-### 6.1 SSE streaming on Vercel Python (top risk)
-The chat uses `sse-starlette` `EventSourceResponse`. Vercel's Python runtime streaming support
-is less battle-tested than Node/Edge. **If SSE doesn't stream**: the chat hangs. Fallback = a
-non-streaming `/api/chat` JSON variant (full reply in one blob) — but note the ~45 s turn then
-sends no bytes until completion, risking an idle-timeout kill; streaming is genuinely the better
-fit. Verify empirically first; keep SSE if it works.
+### 6.1 SSE streaming on Vercel Python — RESOLVED (works)
+Proven live on 2026-07-10: `/api/chat` streamed **134 SSE frames** over ~17 s and terminated with
+`event: done` (a qwen-max reply rendered token-by-token). `sse-starlette`'s `EventSourceResponse`
+streams fine on Vercel's Python runtime — no fallback needed.
 
-### 6.2 MCP stdio-child in the function env
-Each cold function spawns the forensic MCP child (`sys.executable mcp/solana_forensics_mcp.py`)
-and keeps it for the chat turn. Lambda-like envs allow `subprocess`, but cold-start (import
-qwen-agent + spawn child + first LLM call) adds ~5–15 s — within the 60 s budget. Verify the
-child connects + the Helius key (passed via the env allowlist, not inheritance) reaches it.
+### 6.2 MCP stdio-child in the function env — RESOLVED (via the §6.4 PYTHONPATH bridge)
+The child spawns + connects + the Helius key (passed via the agent's `env` block) reaches it —
+proven by `/api/chat` returning live on-chain reads (holder %, mint/freeze authority, creation
+date). Cold-start ~17 s observed (import qwen-agent + spawn child + first LLM call), well under
+the 300 s budget. The child couldn't find its deps at first (§6.4); fixed by the
+`get_default_environment` monkeypatch in `app/main.py`.
 
 ### 6.3 `buildCommand` + `vercel.json` — RESOLVED on first deploy (2026-07-10)
 The buildCommand + `outputDirectory: frontend/dist` + the single `api/index.py` function + the
@@ -181,21 +183,32 @@ were fixed empirically (commit `a1c2d4f`, validated: `/api/health` → 200, SPA 
 3. **`maxDuration` was `60`** — a stale cap below Hobby's 300 s Fluid Compute ceiling. Raised
    to `300` (60 s squeezed even the ~45 s chat; 300 s also covers the ~180 s deployer scan).
 
-### 6.4 Editable-install `.pth` survives bundling? — parent RESOLVED; child OPEN
-The parent process imports `anamnesis` fine — the `api/index.py` shim puts `src/` on `sys.path`,
-and §6.3 confirmed `src/` is bundled — so **this half is closed.** The open half is the spawned
-MCP *child*: a fresh `sys.executable` that does NOT run the shim, so it relies on the editable
-install's site-packages `.pth`/finder to see `src/`. If, when `/api/chat` is exercised, the child
-can't `import anamnesis` (or `mcp_entrypoint_path()` 404s), drop a hand-placed
-`<site-packages>/anamnesis_src.pth` containing the runtime `src/` path (e.g. `/var/task/src`) —
-`includeFiles` already bundles `src/**`, so only the path wiring needs fixing. Not yet exercised
-(needs env keys + Mongo + a real `/api/chat` call).
+### 6.4 MCP child dep isolation — RESOLVED (not via `.pth`; via a PYTHONPATH env bridge)
+**The `.pth` hypothesis was wrong.** The real issue: Vercel isolates the pip deps to
+`/tmp/_vc_deps/lib/python3.12/site-packages` (parent-only — `vc_init.py` injects it into the
+PARENT's `sys.path`, not a default site-packages). The spawned MCP child is a fresh
+`/var/lang/bin/python` whose default site-packages (`/var/lang/lib/python3.12/site-packages`) has
+no `.pth` files and no `mcp` SDK — so it crashed on `from mcp.server.fastmcp import FastMCP`
+(`ModuleNotFoundError: No module named 'mcp'`). `/var/lang` is READ-ONLY (Errno 30), so a runtime
+`.pth` there is impossible; the mcp SDK's child-env allowlist (`DEFAULT_INHERITED_ENV_VARS` =
+`HOME/LOGNAME/PATH/SHELL/TERM/USER`) excludes `PYTHONPATH`; and the frozen `agent.py` env block
+can't be modified. **Fix (non-frozen `app/main.py`):** monkeypatch
+`mcp.client.stdio.get_default_environment` to add
+`PYTHONPATH=/tmp/_vc_deps/lib/python3.12/site-packages:/var/task/src:/var/task:/var/task/_vendor`
+to the child env — only on Vercel (detect `/var/task/src`). The child then imports `mcp` +
+`anamnesis` and the agent turn completes (commit `96e73a7`).
+
+A **second** qwen-agent/serverless incompatibility surfaced right after: qwen-agent's built-in
+`DocParser`/`Storage` writes under `DEFAULT_WORKSPACE` (env `QWEN_AGENT_DEFAULT_WORKSPACE`,
+default `./workspace` → `/var/task`, read-only) → `OSError`. Fix: set
+`QWEN_AGENT_DEFAULT_WORKSPACE=/tmp/qwen_workspace` on the Vercel project (writable). Documented
+in `.env.example`.
 
 ## 7. Known limitations (v1)
 
 - Agent chat `/graphs/*.html` link 404s (§3). Dashboard tile works.
-- Cold-start latency on the first request after idle (~5–15 s), then warm.
-- Vercel cost: **$0** (Hobby covers it — 300 s duration, 250 MB size at ~175 MB deps) + Atlas M0 (free). Pro only if a Hobby limit bites.
-- Judging note: the demo is **already submitted** (video + Alibaba proof + blog). A live URL is
-  additive, not required. Only link it on Devpost if the smoke (§5.4) is fully green — a
-  half-broken live demo is a liability.
+- Cold-start latency on the first request after idle (~17 s observed for `/api/chat`), then warm.
+- Vercel cost: **$0** (Hobby covers it — 300 s duration, ~75 MB actual function size / 250 MB cap) + Atlas M0 (free). Pro only if a Hobby limit bites.
+- Judging note: the demo is **already submitted** (video + Alibaba proof + blog). The live URL
+  (`https://anamnesis.rectorspace.com`) is now fully green — `/api/health`, `/api/assess`
+  (HIGH 0.8511 from memory), and `/api/chat` (agent turn) all work on Vercel $0.
