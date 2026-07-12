@@ -6,6 +6,8 @@
 
 <p align="center"><img src="assets/architecture.svg" alt="Anamnesis architecture: a Qwen-Agent orchestrator over native memory tools (MongoDB/ApsaraDB) and an MCP forensic server (Helius), producing a memory-fused verdict" width="100%"></p>
 
+<p align="center"><a href="https://anamnesis.rectorspace.com"><strong>▸ Try it live — anamnesis.rectorspace.com</strong></a> &nbsp;·&nbsp; <a href="https://devpost.com/software/anamnesis-solana-forensic-agent-with-memory">Devpost submission</a> &nbsp;·&nbsp; <a href="https://vimeo.com/1207872741">Demo video</a></p>
+
 | | |
 |---|---|
 | **Hackathon** | Global AI Hackathon with Qwen Cloud (Devpost) — **MemoryAgent** track |
