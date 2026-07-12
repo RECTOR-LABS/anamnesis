@@ -6,6 +6,7 @@ this middleware is simply inert there, not a prod security surface.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -41,8 +42,7 @@ quiet_http_loggers()
 # read-only, so a runtime .pth can't fix it. Bridge by widening the allowlist to carry PYTHONPATH
 # pointing at the deps + src. Only on Vercel (detect /var/task/src). Pinned mcp==1.12.4 — the
 # `get_default_environment` symbol is stable. See deploy/vercel-runbook.md §6.4.
-import os as _os
-if _os.path.isdir("/var/task/src"):
+if os.path.isdir("/var/task/src"):
     try:
         import mcp.client.stdio as _stdio
         _orig_gde = _stdio.get_default_environment
